@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>SiapJek - Driver</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <style>
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      overflow: hidden !important;
+      background-color: #0f172a;
+      position: fixed;
+      inset: 0;
+    }
+    #app-frame {
+      width: 100% !important;
+      height: 100% !important;
+      height: 100dvh !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-white font-sans">
+
+  <!-- Tampilan Loading Awal -->
+  <div id="app-loading" class="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center space-y-4 z-50 p-6 text-center">
+    <div class="w-16 h-16 bg-gradient-to-tr from-orange-500 to-amber-400 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl animate-bounce">
+      SJ
+    </div>
+    <div class="space-y-1">
+      <h3 class="text-sm font-black text-slate-200">SiapJek Driver</h3>
+      <p class="text-xs text-slate-400 font-medium">Memuat aplikasi driver, mohon tunggu...</p>
+    </div>
+  </div>
+
+  <!-- Iframe dengan dukungan penuh untuk Google Maps, Mapbox, dan Sensor GPS -->
+  <iframe 
+    id="app-frame" 
+    allow="geolocation; camera; microphone; encrypted-media; display-capture; autoplay; clipboard-read; clipboard-write; storage-access"
+    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+    style="display: none;">
+  </iframe>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyB_Ndbf9idBUkMb5aNU-Bc8qZIEVI90Ddk",
+      authDomain: "siapjek-8d69c.firebaseapp.com",
+      databaseURL: "https://siapjek-8d69c-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "siapjek-8d69c"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    function muatAplikasiDriver() {
+      const loadingEl = document.getElementById('app-loading');
+      let iframe = document.getElementById('app-frame');
+      
+      db.ref('source_code/driver').on('value', snap => {
+        if (snap.exists() && snap.val()) {
+          let htmlCode = snap.val();
+          
+          iframe.srcdoc = htmlCode;
+          iframe.style.display = 'block';
+          
+          loadingEl.style.display = 'none';
+        } else {
+          loadingEl.innerHTML = `
+            <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">✕</div>
+            <p class="text-red-400 text-xs font-bold">Kode aplikasi driver belum diatur di Panel Admin.</p>
+            <button onclick="location.reload()" class="mt-4 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-slate-700">Coba Lagi</button>
+          `;
+        }
+      }, err => {
+        loadingEl.innerHTML = `
+          <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">⚠️️</div>
+          <p class="text-red-400 text-xs font-bold">Gagal memuat aplikasi: ${err.message}</p>
+          <button onclick="location.reload()" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md">Coba Lagi 🔄</button>
+        `;
+      });
+    }
+
+    muatAplikasiDriver();
+  </script>
+</body>
+</html>

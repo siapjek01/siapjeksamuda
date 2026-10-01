@@ -36,6 +36,7 @@
 </head>
 <body class="bg-slate-900 text-white font-sans">
 
+  <!-- Tampilan Loading Awal -->
   <div id="app-loading" class="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center space-y-4 z-50 p-6 text-center">
     <div class="w-16 h-16 bg-gradient-to-tr from-orange-500 to-amber-400 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl animate-bounce">
       SJ
@@ -46,6 +47,7 @@
     </div>
   </div>
 
+  <!-- Iframe Aplikasi -->
   <iframe 
     id="app-frame" 
     allow="geolocation; camera; microphone; encrypted-media; display-capture; autoplay; clipboard-read; clipboard-write; storage-access"
@@ -62,6 +64,7 @@
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // Fungsi Mendaftarkan FCM Token Driver
     function daftarkanFCM(driverId) {
       if ('serviceWorker' in navigator && firebase.messaging.isSupported()) {
         navigator.serviceWorker.register('/firebase-messaging-sw.js')
@@ -86,6 +89,7 @@
       }
     }
 
+    // Mendengarkan Sinyal Login dari Aplikasi iFrame
     window.addEventListener('message', (event) => {
       if (event.data && (event.data.type === 'SIAPJEK_LOGIN_SUCCESS' || event.data.type === 'LOGIN_SUCCESS')) {
         let driverId = event.data.userId || event.data.id;
@@ -93,6 +97,7 @@
       }
     });
 
+    // Memuat Kode HTML dari Firebase secara Langsung (doc.write)
     function muatAplikasiDriver() {
       const loadingEl = document.getElementById('app-loading');
       let iframe = document.getElementById('app-frame');
@@ -101,15 +106,13 @@
         if (snap.exists() && snap.val()) {
           let htmlCode = snap.val();
           
-          // Konversi kode HTML menjadi Blob URL agar tidak terbentur sandbox browser
-          const blob = new Blob([htmlCode], { type: 'text/html' });
-          const blobUrl = URL.createObjectURL(blob);
+          iframe.style.display = 'block';
+          let doc = iframe.contentWindow.document;
+          doc.open();
+          doc.write(htmlCode);
+          doc.close();
           
-          iframe.src = blobUrl;
-          iframe.onload = () => {
-            iframe.style.display = 'block';
-            loadingEl.style.display = 'none';
-          };
+          loadingEl.style.display = 'none';
         } else {
           loadingEl.innerHTML = `
             <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">✕</div>

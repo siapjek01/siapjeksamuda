@@ -1,7 +1,6 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
-// Inisialisasi Firebase dengan konfigurasi projek SiapJek
 firebase.initializeApp({
   apiKey: "AIzaSyB_Ndbf9idBUkMb5aNU-Bc8qZIEVI90Ddk",
   authDomain: "siapjek-8d69c.firebaseapp.com",
@@ -11,17 +10,20 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Menangani notifikasi yang masuk saat aplikasi ditutup / di latar belakang
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Notifikasi diterima di background: ', payload);
+  const title = payload.notification?.title || payload.data?.title || 'SiapJek 🛵';
+  const body = payload.notification?.body || payload.data?.body || 'Ada pembaruan pesanan.';
+  const orderId = payload.data?.orderId || 'siapjek_order';
 
-  const notificationTitle = payload.notification?.title || 'SiapJek Notifikasi';
   const notificationOptions = {
-    body: payload.notification?.body || 'Ada pembaruan pesanan baru!',
+    body: body,
     icon: 'https://cdn-icons-png.flaticon.com/512/3097/3097180.png',
     badge: 'https://cdn-icons-png.flaticon.com/512/3097/3097180.png',
-    vibrate: [200, 100, 200]
+    vibrate: [300, 100, 300, 100, 500],
+    requireInteraction: true,
+    tag: orderId, // Otomatis memperbarui notifikasi status lama tanpa menumpuk
+    data: { url: '/' }
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  self.registration.showNotification(title, notificationOptions);
 });

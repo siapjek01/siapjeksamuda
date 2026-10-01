@@ -29,17 +29,13 @@
       padding: 0 !important;
       display: block;
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       z-index: 1;
     }
   </style>
 </head>
 <body class="bg-slate-900 text-white font-sans">
 
-  <!-- Tampilan Loading Awal -->
   <div id="app-loading" class="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center space-y-4 z-50 p-6 text-center">
     <div class="w-16 h-16 bg-gradient-to-tr from-orange-500 to-amber-400 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl animate-bounce">
       SJ
@@ -50,11 +46,9 @@
     </div>
   </div>
 
-  <!-- Iframe dengan dukungan penuh untuk Google Maps, Mapbox, dan Sensor GPS -->
   <iframe 
     id="app-frame" 
     allow="geolocation; camera; microphone; encrypted-media; display-capture; autoplay; clipboard-read; clipboard-write; storage-access"
-    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
     style="display: none;">
   </iframe>
 
@@ -68,36 +62,34 @@
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // Inisialisasi Messaging untuk FCM
-    let messaging = null;
-    if (firebase.messaging.isSupported()) {
-      messaging = firebase.messaging();
-    }
-
-    // Fungsi Mendaftarkan FCM Token
     function daftarkanFCM(driverId) {
-      if (!messaging) return;
-
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
-          return messaging.getToken({
-            vapidKey: "BN-UYE3UfMQsDyrkFUgawHOL8fEgERtvIePJd42nCajk91DeenLt0U_PViXjZN1mgaVKKxN9C4Nh04cL5hL2tO8" // Gantilah dengan VAPID key dari Firebase Console
+      if ('serviceWorker' in navigator && firebase.messaging.isSupported()) {
+        navigator.serviceWorker.register('/firebase-messaging-sw.js')
+          .then((registration) => {
+            const messaging = firebase.messaging();
+            Notification.requestPermission().then(permission => {
+              if (permission === 'granted') {
+                return messaging.getToken({
+                  serviceWorkerRegistration: registration,
+                  vapidKey: "BN-UYE3UfMQsDyrkFUgawHOL8fEgERtvIePJd42nCajk91DeenLt0U_PViXjZN1mgaVKKxN9C4Nh04cL5hL2tO8"
+                });
+              }
+            }).then(token => {
+              if (token && driverId) {
+                db.ref(`drivers/${driverId}/fcm_token`).set(token);
+                console.log('✅ FCM Token Driver Berhasil Disimpan:', token);
+              }
+            }).catch(err => {
+              console.error('❌ Gagal mengambil token FCM Driver:', err);
+            });
           });
-        }
-      }).then(token => {
-        if (token && driverId) {
-          db.ref(`drivers/${driverId}/fcmToken`).set(token);
-          console.log('FCM Token Driver Berhasil Disimpan:', token);
-        }
-      }).catch(err => {
-        console.error('Gagal mengambil token FCM Driver:', err);
-      });
+      }
     }
 
-    // Mendengarkan sinyal dari iframe saat driver login
     window.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'SIAPJEK_LOGIN_SUCCESS') {
-        daftarkanFCM(event.data.userId);
+      if (event.data && (event.data.type === 'SIAPJEK_LOGIN_SUCCESS' || event.data.type === 'LOGIN_SUCCESS')) {
+        let driverId = event.data.userId || event.data.id;
+        if (driverId) daftarkanFCM(driverId);
       }
     });
 
@@ -108,21 +100,28 @@
       db.ref('source_code/driver').on('value', snap => {
         if (snap.exists() && snap.val()) {
           let htmlCode = snap.val();
-          iframe.srcdoc = htmlCode;
-          iframe.style.display = 'block';
-          loadingEl.style.display = 'none';
+          
+          // Konversi kode HTML menjadi Blob URL agar tidak terbentur sandbox browser
+          const blob = new Blob([htmlCode], { type: 'text/html' });
+          const blobUrl = URL.createObjectURL(blob);
+          
+          iframe.src = blobUrl;
+          iframe.onload = () => {
+            iframe.style.display = 'block';
+            loadingEl.style.display = 'none';
+          };
         } else {
           loadingEl.innerHTML = `
-            <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">âœ•</div>
+            <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">✕</div>
             <p class="text-red-400 text-xs font-bold">Kode aplikasi driver belum diatur di Panel Admin.</p>
-            <button onclick="location.reload()" class="mt-4 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-slate-700">Coba Lagi</button>
+            <button onclick="location.reload()" class="mt-4 bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl border border-slate-700">Coba Lagi</button>
           `;
         }
       }, err => {
         loadingEl.innerHTML = `
-          <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">âš ï¸</div>
+          <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">⚠️</div>
           <p class="text-red-400 text-xs font-bold">Gagal memuat aplikasi: ${err.message}</p>
-          <button onclick="location.reload()" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md">Coba Lagi ðŸ”„</button>
+          <button onclick="location.reload()" class="mt-4 bg-orange-500 text-white text-xs font-bold px-4 py-2 rounded-xl">Coba Lagi 🔄</button>
         `;
       });
     }

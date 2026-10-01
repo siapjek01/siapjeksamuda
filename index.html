@@ -8,6 +8,7 @@
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
   <style>
     html, body {
       margin: 0 !important;
@@ -67,32 +68,61 @@
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
+    // Inisialisasi Messaging untuk FCM
+    let messaging = null;
+    if (firebase.messaging.isSupported()) {
+      messaging = firebase.messaging();
+    }
+
+    // Fungsi Mendaftarkan FCM Token
+    function daftarkanFCM(userId, pathRole = 'users') {
+      if (!messaging) return;
+
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          return messaging.getToken({
+            vapidKey: "BN-UYE3UfMQsDyrkFUgawHOL8fEgERtvIePJd42nCajk91DeenLt0U_PViXjZN1mgaVKKxN9C4Nh04cL5hL2tO8" // Gantilah dengan VAPID key dari Firebase Console
+          });
+        }
+      }).then(token => {
+        if (token && userId) {
+          db.ref(`${pathRole}/${userId}/fcmToken`).set(token);
+          console.log('FCM Token Pelanggan Berhasil Disimpan:', token);
+        }
+      }).catch(err => {
+        console.error('Gagal mengambil token FCM:', err);
+      });
+    }
+
+    // Mendengarkan sinyal dari iframe saat user login
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'SIAPJEK_LOGIN_SUCCESS') {
+        daftarkanFCM(event.data.userId, 'users');
+      }
+    });
+
     function muatAplikasiPelanggan() {
       const loadingEl = document.getElementById('app-loading');
       let iframe = document.getElementById('app-frame');
       
-      // Menggunakan .on('value') agar sinkron otomatis saat admin memperbarui kode di DB
       db.ref('source_code/pelanggan').on('value', snap => {
         if (snap.exists() && snap.val()) {
           let htmlCode = snap.val();
-          
-          // Menggunakan srcdoc agar eksekusi script Google Maps & Mapbox lebih stabil di WebView Android
           iframe.srcdoc = htmlCode;
           iframe.style.display = 'block';
-          
           loadingEl.style.display = 'none';
         } else {
           loadingEl.innerHTML = `
-            <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">✕</div>
+            <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">âœ•</div>
             <p class="text-red-400 text-xs font-bold">Kode aplikasi pelanggan belum diatur di Panel Admin.</p>
             <button onclick="location.reload()" class="mt-4 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-slate-700">Coba Lagi</button>
           `;
         }
       }, err => {
         loadingEl.innerHTML = `
-          <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">⚠️️</div>
+          <div class="w-12 h-12 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center text-xl font-bold mb-2">âš ï¸</div>
           <p class="text-red-400 text-xs font-bold">Gagal memuat aplikasi: ${err.message}</p>
-          <button onclick="location.reload()" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md">Coba Lagi 🔄</button>
+          <button onclick="location.reload()" class="mt-4 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md">Coba Lagi ðŸ”„</button>
         `;
       });
     }

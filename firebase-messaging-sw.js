@@ -10,9 +10,10 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Menagani notifikasi di latar belakang / layar terkunci
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || payload.data?.title || 'SiapJek 🛵';
-  const body = payload.notification?.body || payload.data?.body || 'Ada pembaruan pesanan.';
+  const title = payload.notification?.title || 'SiapJek Update 🛵';
+  const body = payload.notification?.body || 'Ada pembaruan pada pesanan Anda.';
   const orderId = payload.data?.orderId || 'siapjek_order';
 
   const notificationOptions = {
@@ -20,9 +21,11 @@ messaging.onBackgroundMessage((payload) => {
     icon: 'https://cdn-icons-png.flaticon.com/512/3097/3097180.png',
     badge: 'https://cdn-icons-png.flaticon.com/512/3097/3097180.png',
     vibrate: [300, 100, 300, 100, 500],
-    requireInteraction: true,
-    tag: orderId, // Otomatis memperbarui notifikasi status lama tanpa menumpuk
-    data: { url: '/' }
+    requireInteraction: true, // Notifikasi tetap melayang di layar sampai di-klik
+    tag: orderId, // MENGGANTIKAN (REPLACE) notifikasi status lama dengan yang baru
+    data: {
+      url: '/'
+    }
   };
 
   self.registration.showNotification(title, notificationOptions);

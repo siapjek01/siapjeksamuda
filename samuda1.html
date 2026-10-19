@@ -2192,7 +2192,7 @@
           }
         },
 
-                handleBackNavigation() {
+                        handleBackNavigation() {
           // Cek urutan modal dari yang paling depan/atas agar tertutup satu per satu
           if (this.showTrackModal) { this.tutupTrackingModal(); return true; }
           if (this.showDriverChatModal) { this.tutupDriverChatModal(); return true; }
@@ -2205,14 +2205,22 @@
           if (this.showMutasiModal) { this.showMutasiModal = false; return true; }
           if (this.showChatModal) { this.showChatModal = false; return true; }
           if (this.currentPage === 'lainnya' && this.subMenuLainnya !== null) { this.subMenuLainnya = null; return true; }
+          
+          // PERBAIKAN: Jika sedang di halaman produk toko, kembali ke daftar toko dulu
+          if (this.currentPage === 'products') { 
+            this.currentPage = 'merchants'; 
+            window.history.pushState({ page: 'merchants' }, ''); 
+            return true; 
+          }
+
           if (String(this.searchKeyword || '').trim() !== '') { this.searchKeyword = ''; return true; }
           if (this.currentPage !== 'home') { this.goHome(false); return true; }
           
           // Jika sudah di beranda dan tidak ada modal aktif, biarkan keluar aplikasi
           return false;
         },
-        
-                initDataListeners() {
+
+        initDataListeners() {
           window.history.replaceState({ page: 'home' }, '');
 
           if (!window.__siapjekBackHandlerRegistered) {

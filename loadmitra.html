@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#06163b">
+<title>SiapJek - Mitra Toko</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#06163b}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#app-frame{position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;display:none;background:#fff;z-index:1}
+#splash{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(ellipse at 50% 43%,#102e67 0%,#071b46 44%,#020d2b 100%);transition:opacity .28s ease}
+#splash:before{content:"";position:absolute;width:75vw;height:48vh;left:-25vw;top:-18vh;border-radius:0 0 100% 0;background:linear-gradient(135deg,#0753a5 0%,#087bd7 62%,transparent 63%);opacity:.72;transform:rotate(-8deg)}
+#splash:after{content:"";position:absolute;width:95vw;height:35vh;right:-25vw;bottom:-18vh;border-radius:100% 0 0 0;border-top:3px solid #ff941c;box-shadow:0 -7px 0 -5px #08a5ff;background:linear-gradient(145deg,transparent 10%,#064ca0 100%);transform:rotate(-7deg)}
+#splash-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:translateY(-1vh)}
+.logo{width:122px;height:122px;border-radius:31px;display:grid;place-items:center;background:linear-gradient(145deg,#ffb52e 0%,#ff8a00 52%,#ff6b00 100%);box-shadow:0 18px 55px #ff82002b,inset 0 1px 1px #ffffff75;position:relative}
+.logo:before{content:"";position:absolute;inset:1px;border-radius:30px;background:linear-gradient(135deg,#ffffff25,transparent 50%)}
+.logo span{position:relative;color:white;font-size:43px;font-weight:950;letter-spacing:-5px;font-style:italic;padding-right:5px;text-shadow:0 2px 3px #8b3d0040}
+.logo span:after{content:"";position:absolute;left:1px;right:-3px;bottom:2px;height:9px;border-bottom:4px solid white;border-radius:50%;transform:rotate(-12deg)}
+.loader{width:49px;height:49px;border-radius:50%;border:6px solid #2a4c83;border-top-color:#ff9a18;border-right-color:#ffb22d;animation:spin .85s linear infinite;margin-top:35px;filter:drop-shadow(0 3px 9px #0003)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:380px){.logo{width:105px;height:105px;border-radius:27px}.logo:before{border-radius:26px}.logo span{font-size:38px}.loader{width:43px;height:43px;margin-top:30px}}
+@media(prefers-reduced-motion:reduce){.loader{animation-duration:2.5s}}
+#error-panel{position:fixed;z-index:8;left:20px;right:20px;bottom:28px;padding:14px 16px;border:1px solid #ffffff20;border-radius:14px;background:#07152feF;color:#e2e8f0;font:13px/1.5 system-ui,sans-serif;display:none;text-align:center}
+#retry{margin-top:10px;padding:9px 15px;border:0;border-radius:10px;background:#f97316;color:#fff;font-weight:700}
+</style>
+</head>
+<body>
+<div id="splash" aria-label="Memuat SiapJek">
+  <div id="splash-inner"><div class="logo" aria-hidden="true"><span>SJ</span></div><div class="loader" aria-hidden="true"></div></div>
+</div>
+<div id="error-panel"><div id="error-text">Aplikasi belum dapat dimuat.</div><button id="retry">Coba Lagi</button></div>
+<iframe id="app-frame" title="SiapJek Mitra Toko" allow="geolocation; camera; microphone; encrypted-media; autoplay; clipboard-read; clipboard-write" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script>
+(function(){
+'use strict';
+const SOURCE_PATH='source_code/mitra';
+const MODE_PATH='loader_settings/mitra_mode';
+const LINK_PATH='mitra_link';
+const config={apiKey:"AIzaSyB_Ndbf9idBUkMb5aNU-Bc8qZIEVI90Ddk",authDomain:"siapjek-8d69c.firebaseapp.com",databaseURL:"https://siapjek-8d69c-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"siapjek-8d69c"};
+const splash=document.getElementById('splash'),frame=document.getElementById('app-frame'),panel=document.getElementById('error-panel'),errorText=document.getElementById('error-text');
+let refs=[],lastSource='',timer=null,retryTimer=null,requestId=0;
+let mode='source',modeLoaded=false,sourceLoaded=false,linkLoaded=false,sourceValue=null,linkValue=null;
+
+function showError(text){errorText.textContent=text;panel.style.display='block';}
+function hideSplash(id){
+ if(id!==undefined&&id!==requestId)return;
+ clearTimeout(timer);panel.style.display='none';splash.style.opacity='0';
+ setTimeout(()=>{if(id!==undefined&&id!==requestId)return;splash.style.display='none';frame.style.display='block'},220);
+}
+function parseSource(v){
+ if(typeof v==='string')return v.trim();
+ if(v&&typeof v==='object'){for(const k of ['url','link','html','code','source','srcdoc'])if(typeof v[k]==='string'&&v[k].trim())return v[k].trim();}
+ return '';
+}
+function isUrl(s){try{const u=new URL(s);return (u.protocol==='https:'||u.protocol==='http:')&&!!u.hostname}catch(e){return false}}
+function scheduleRetry(){clearTimeout(retryTimer);retryTimer=setTimeout(start,4000)}
+function showLoading(){panel.style.display='none';splash.style.display='flex';splash.style.opacity='1';frame.style.display='none';}
+function load(v){
+ const source=parseSource(v);
+ if(!source||(mode==='link'&&!isUrl(source))){
+  lastSource='';
+  showLoading();
+  showError(mode==='link'?'Link hosting Mitra belum diisi atau tidak valid di Panel Admin.':'Source code aplikasi Mitra belum diisi di Panel Admin.');
+  return;
+ }
+ if(source===lastSource&&(frame.getAttribute('src')||frame.getAttribute('srcdoc'))){hideSplash(requestId);return}
+ lastSource=source;const id=++requestId;clearTimeout(timer);showLoading();
+ frame.onload=function(){if(id===requestId)hideSplash(id)};
+ if(isUrl(source)){frame.removeAttribute('srcdoc');frame.src=source}
+ else{frame.removeAttribute('src');frame.srcdoc=source}
+ timer=setTimeout(()=>{if(id===requestId)hideSplash(id)},5000);
+}
+function updateActiveSource(){
+ if(!modeLoaded)return;
+ if(mode==='link'){
+  if(!linkLoaded)return;
+  load(linkValue);
+ }else{
+  if(!sourceLoaded)return;
+  load(sourceValue);
+ }
+}
+function detach(){refs.forEach(x=>{try{x.ref.off('value',x.callback)}catch(e){}});refs=[]}
+function start(){
+ clearTimeout(retryTimer);detach();
+ modeLoaded=sourceLoaded=linkLoaded=false;mode='source';sourceValue=linkValue=null;
+ lastSource='';showLoading();
+ try{
+  if(!window.firebase||!firebase.database){showError('Koneksi komponen aplikasi gagal. Periksa internet lalu coba lagi.');scheduleRetry();return}
+  if(!firebase.apps.length)firebase.initializeApp(config);
+  const db=firebase.database();
+  function listen(path,handler){
+   const ref=db.ref(path),callback=snap=>handler(snap);
+   refs.push({ref,callback});
+   ref.on('value',callback,()=>{showError('Gagal membaca pengaturan loader. Periksa koneksi Firebase dan izin database.');scheduleRetry()});
+  }
+  listen(MODE_PATH,snap=>{mode=snap.val()==='link'?'link':'source';modeLoaded=true;updateActiveSource()});
+  listen(SOURCE_PATH,snap=>{sourceValue=snap.exists()?snap.val():null;sourceLoaded=true;updateActiveSource()});
+  listen(LINK_PATH,snap=>{linkValue=snap.exists()?snap.val():null;linkLoaded=true;updateActiveSource()});
+ }catch(e){showError('Aplikasi belum dapat dimuat. Periksa koneksi lalu coba lagi.');scheduleRetry()}
+}
+document.getElementById('retry').addEventListener('click',start);
+window.addEventListener('online',start);
+start();
+})();
+</script>
+</body>
+</html>

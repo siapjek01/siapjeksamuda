@@ -1,0 +1,2846 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SiapJek - Aplikasi Driver Pro (Auto Cleanup)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  
+  <!-- Mapbox GL JS & CSS -->
+  <script src='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js'></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css' rel='stylesheet' />
+
+  <!-- Firebase App & Database -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  
+  <style>
+    html, body, button { touch-action: manipulation; }
+    button { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible { outline: 3px solid rgba(16,185,129,.65); outline-offset: 2px; }
+    .fa-spin { animation-duration: .7s; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+    [x-cloak] { display: none !important; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    :root { color-scheme: light; }
+    html, body { background: #f1f5f9 !important; color: #1e293b !important; margin: 0; padding: 0; overflow: hidden; height: 100%; }
+    
+    .app-container {
+      width: 100% !important; max-width: 480px !important; height: 100dvh !important;
+      margin: 0 auto; position: relative; display: flex; flex-direction: column; overflow: hidden;
+      background: #f8fafc !important;
+    }
+
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.98) !important; color: #1e293b !important; border: 1px solid #e2e8f0 !important;
+      box-shadow: 0 -6px 25px rgba(15,23,42,0.15) !important;
+    }
+    
+    #map-wrapper {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100%; height: 100%;
+      z-index: 1;
+    }
+    #map { width: 100%; height: 100%; }
+
+    .bottom-sheet {
+      position: absolute;
+      bottom: 56px;
+      left: 0; right: 0;
+      z-index: 25;
+      border-top-left-radius: 28px;
+      border-top-right-radius: 28px;
+      transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+      max-height: 75dvh;
+      display: flex; flex-direction: column;
+      touch-action: pan-y;
+      will-change: transform;
+    }
+    .bottom-sheet.collapsed {
+      transform: translateY(calc(100% - 68px));
+    }
+
+    .driver-motor-icon {
+      width: 52px; height: 52px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent !important; border: 0 !important;
+      filter: drop-shadow(0 4px 6px rgba(15,23,42,.4));
+      transform-origin: 50% 50%;
+      will-change: transform;
+      pointer-events: none;
+    }
+    .driver-motor-icon svg { width: 48px; height: 48px; overflow: visible; display: block; }
+
+    .map-location-marker {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      white-space: nowrap; pointer-events: none;
+    }
+    .map-location-label {
+      color: #fff; font-size: 10px; font-weight: 900; letter-spacing: .4px;
+      padding: 3px 7px; border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(15,23,42,.25); border: 1px solid rgba(255,255,255,.9);
+    }
+    .map-location-pin {
+      width: 26px; height: 26px; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); display: flex; align-items: center; justify-content: center;
+      border: 2px solid #fff; box-shadow: 0 2px 8px rgba(15,23,42,.3);
+    }
+    .map-location-pin i { color: #fff; font-size: 11px; transform: rotate(45deg); }
+    .route-info-badge { background: rgba(15,23,42,.92); color: #fff; border-radius: 14px; backdrop-filter: blur(8px); }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-800 flex justify-center items-center min-h-screen">
+
+  <div x-data="{
+    isLoggedIn: false,
+    isLoggingIn: false,
+
+    /* MODE PEMELIHARAAN DARI PANEL ADMIN */
+    maintenanceActive: false,
+    maintenanceMessage: 'Aplikasi driver sedang dalam pemeliharaan sistem. Mohon kembali beberapa saat lagi.',
+    maintenanceChecked: false,
+    maintenanceListenerRef: null,
+    loginMessage: '',
+    inputDriverId: '',
+    loginMode: 'email',
+    inputEmail: '',
+    inputPassword: '',
+    firebaseUser: null,
+    authMessage: '',
+    isAuthActionBusy: false,
+    newEmail: '',
+    emailChangeMessage: '',
+    driverId: '',
+    driverData: null,
+    driverLat: -2.21,
+    driverLng: 113.92,
+    activeTab: 'orders',
+    availableOrders: [],
+    completedOrders: [],
+    hiddenOrderHistory: {},
+    deletingOrderHistory: false,
+    driverTransactions: [],
+    topupHistory: [],
+    myActiveOrder: null,
+    adminConfig: { 
+      min_saldo_ambil_order: 10000,
+      // Kompatibilitas dengan konfigurasi lama
+      min_saldo_driver: 10000, 
+      komisi_persen: 15, 
+      admin_wa: '6281528644143',
+      rekening_admin: { bank: 'BANK BCA', nomor: 'Belum diisi Admin', atas_nama: 'Admin SiapJek' }
+    },
+    
+    /* MODAL STATES */
+    showActionModal: false,
+    actionModalTitle: '',
+    actionModalMessage: '',
+    actionModalCallback: null,
+
+    showTopupModal: false,
+    topupStep: 1,
+    topupNominalBase: 50000,
+    topupUniqueCode: 0,
+    topupTotalTransfer: 0,
+
+    showWithdrawModal: false,
+    withdrawNominal: '',
+    withdrawBank: 'BCA',
+    withdrawRekening: '',
+    withdrawAtasNama: '',
+    topupRequestId: '',
+    withdrawRequestId: '',
+    lastTopupStatus: null,
+    lastWithdrawStatus: null,
+
+    showCustomerChatModal: false,
+    customerChatHistory: [],
+    customerChatInputText: '',
+    customerChatRef: null,
+    customerChatOrderId: '',
+    customerChatMessageIds: {},
+    isSendingChat: false,
+    chatCleanupInFlight: {},
+    chatCleanupDone: {},
+    isUploadingImage: false,
+    isUpdatingOrderStatus: false,
+    isRestoringConnection: false,
+
+    /* PETA & GPS ENGINE */
+    gpsWatcher: null,
+    gpsPublishTimer: null,
+    map: null,
+    driverMarker: null,
+    pickupMarker: null,
+    destinationMarker: null,
+    mapFollowDriver: true,
+    map3DMode: false,
+    mapHasFittedOrder: false,
+    mapUserInteracting: false,
+    driverHeading: 0,
+    gpsAccuracy: null,
+    gpsStatus: 'Menunggu GPS',
+    routeEtaText: '-- menit',
+    routeDistanceText: '-- km',
+    driverMarkerAnimation: null,
+    lastValidHeading: 0,
+    routeCoordinates: [],
+    liveTrackCoordinates: [],
+    liveTrackOrderId: null,
+    lastTrackPointAt: 0,
+    lastRouteUpdateAt: 0,
+    routeRequestSeq: 0,
+    lastGpsPersistAt: 0,
+    previousAvailableCount: 0,
+    hasLoadedOrdersSnapshot: false,
+    seenAvailableOrderIds: {},
+    chatNotifyRef: null,
+    chatNotifyOrderId: '',
+    seenChatMessageIds: {},
+    unreadChatCount: 0,
+    unreadChatOrderId: '',
+    notificationToast: null,
+    notificationTimer: null,
+    takingOrderId: '',
+    takeOrderMessage: '',
+    takeOrderSlowTimer: null,
+    
+    /* PENGATURAN TAMPILAN PETA */
+    showStylePicker: false,
+    currentMapStyle: 'mapbox://styles/mapbox/streets-v12',
+    mapStyles: [
+      { id: 'mapbox://styles/mapbox/streets-v12', name: 'Jalan (Standard)', icon: 'fa-map' },
+      { id: 'mapbox://styles/mapbox/satellite-streets-v12', name: 'Satelit', icon: 'fa-earth-asia' },
+      { id: 'mapbox://styles/mapbox/dark-v11', name: 'Mode Malam (Dark)', icon: 'fa-moon' },
+      { id: 'mapbox://styles/mapbox/light-v11', name: 'Mode Terang (Light)', icon: 'fa-sun' },
+      { id: 'mapbox://styles/mapbox/outdoors-v12', name: 'Outdoors', icon: 'fa-tree' }
+    ],
+
+    sheetCollapsed: false,
+    sheetTouchStartY: 0,
+    sheetTouchStartX: 0,
+    sheetTouchStart(clientY, clientX) {
+      this.sheetTouchStartY = clientY;
+      this.sheetTouchStartX = clientX;
+    },
+    sheetTouchEnd(clientY, clientX) {
+      const dy = clientY - this.sheetTouchStartY;
+      const dx = clientX - this.sheetTouchStartX;
+      if (Math.abs(dy) < 25 || Math.abs(dy) < Math.abs(dx) * 1.1) return;
+      if (dy > 0) this.sheetCollapsed = true;
+      else this.sheetCollapsed = false;
+      this.$nextTick(() => { if (this.map) this.map.resize(); });
+    },
+    toggleSheet() {
+      this.sheetCollapsed = !this.sheetCollapsed;
+      this.$nextTick(() => { if (this.map) this.map.resize(); });
+    },
+
+    mapboxToken: 'pk.eyJ1IjoiaWh3YW45NSIsImEiOiJjbXU4b3V0MnIwdjI0MnZzY3lva25ieTQ0In0.DmnG10f-F7DiLjeVBUviAg',
+
+    playOrderSound(kind = 'order') {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const playTone = (freq, start, duration) => {
+            const osc = ctx.createOscillator(), gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
+            gain.gain.setValueAtTime(0.001, ctx.currentTime + start);
+            gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + start + 0.025);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + duration);
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start(ctx.currentTime + start); osc.stop(ctx.currentTime + start + duration + 0.03);
+          };
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          if (kind === 'chat') { playTone(660, 0, 0.16); playTone(880, 0.18, 0.18); }
+          else { playTone(880, 0, 0.18); playTone(1040, 0.22, 0.22); }
+          setTimeout(() => ctx.close().catch(() => {}), 900);
+        }
+      } catch (e) { console.log('Suara notifikasi tidak tersedia:', e); }
+      try { if (navigator.vibrate) navigator.vibrate(kind === 'chat' ? [100, 60, 100] : [180, 80, 180]); } catch (_) {}
+    },
+
+    showDriverNotification(type, title, message, orderId = '') {
+      this.notificationToast = { type, title, message, orderId };
+      if (this.notificationTimer) clearTimeout(this.notificationTimer);
+      this.notificationTimer = setTimeout(() => { this.notificationToast = null; }, 7000);
+    },
+
+    dismissDriverNotification() {
+      this.notificationToast = null;
+      if (this.notificationTimer) clearTimeout(this.notificationTimer);
+      this.notificationTimer = null;
+    },
+
+    openNotificationTarget() {
+      const n = this.notificationToast;
+      this.dismissDriverNotification();
+      if (n?.type === 'chat' && this.myActiveOrder) this.bukaChatPelanggan();
+      else this.activeTab = 'orders';
+    },
+
+    listenActiveOrderChat(orderId) {
+      const id = String(orderId || '');
+      if (id === this.chatNotifyOrderId) return;
+      if (this.chatNotifyRef) this.chatNotifyRef.off('child_added');
+      this.chatNotifyRef = null;
+      this.chatNotifyOrderId = id;
+      this.seenChatMessageIds = {};
+      if (this.unreadChatOrderId !== id) {
+        this.unreadChatOrderId = id;
+        this.unreadChatCount = 0;
+      }
+      if (!id || !this.driverId) return;
+      const ref = db.ref('order_chats/' + id).limitToLast(50);
+      // Batasi pembacaan ke 50 pesan terakhir agar chat lama tidak membebani aplikasi.
+      ref.once('value').then(snapshot => {
+        if (this.chatNotifyOrderId !== id) return;
+        snapshot.forEach(child => { this.seenChatMessageIds[child.key] = true; });
+        this.chatNotifyRef = ref;
+        ref.on('child_added', child => {
+          if (this.chatNotifyOrderId !== id || this.seenChatMessageIds[child.key]) return;
+          this.seenChatMessageIds[child.key] = true;
+          const msg = child.val() || {};
+          if (String(msg.pengirim || '').toLowerCase() === 'driver') return;
+          const inChat = this.showCustomerChatModal;
+          if (!inChat) {
+            this.unreadChatCount = Math.min(99, Number(this.unreadChatCount || 0) + 1);
+            const preview = msg.tipe === 'gambar' || msg.gambar ? 'Mengirim foto' : String(msg.pesan || msg.text || 'Pesan baru');
+            this.showDriverNotification('chat', 'Pesan chat masuk', (msg.nama || 'Pelanggan') + ': ' + preview, id);
+            this.playOrderSound('chat');
+          } else {
+            this.playOrderSound('chat');
+          }
+        });
+      }).catch(err => console.warn('Listener notifikasi chat:', err));
+    },
+
+    /* Pembersihan riwayat dinonaktifkan di aplikasi driver.
+       Versi lama menghapus pesanan dan chat milik SEMUA pengguna dari database bersama.
+       Penghapusan global harus dilakukan oleh admin/server, bukan saat driver membuka aplikasi. */
+    runAutoCleanupHistory() {
+      console.info('Pembersihan otomatis global dinonaktifkan demi keamanan data pesanan.');
+    },
+
+    initDriverSession() {
+      // Baca mode pemeliharaan yang diatur admin. Listener real-time akan
+      // membuka/mengunci aplikasi driver tanpa perlu memuat ulang halaman.
+      this.maintenanceListenerRef = db.ref('settings/maintenance_mode');
+      this.maintenanceListenerRef.on('value', snap => {
+        const data = snap.val();
+        if (data && typeof data === 'object') {
+          this.maintenanceActive = data.active === true || data.active === 1 || data.active === 'true';
+          const message = String(data.message || '').trim();
+          this.maintenanceMessage = message || 'Aplikasi driver sedang dalam pemeliharaan sistem. Mohon kembali beberapa saat lagi.';
+        } else {
+          // Mendukung format lama jika node berisi boolean langsung.
+          this.maintenanceActive = data === true || data === 1 || data === 'true';
+        }
+        this.maintenanceChecked = true;
+      }, err => {
+        console.error('Gagal membaca mode pemeliharaan admin:', err);
+        this.maintenanceChecked = true;
+      });
+
+      // Jalankan pembersihan otomatis saat aplikasi pertama kali dimuat
+      this.runAutoCleanupHistory();
+
+      db.ref('settings/app_config').on('value', snap => {
+        if(snap.exists()) {
+          let val = snap.val();
+          this.adminConfig.min_saldo_ambil_order = Number(val.min_saldo_ambil_order ?? val.min_saldo_driver ?? 10000);
+          this.adminConfig.min_saldo_driver = Number(val.min_saldo_driver ?? this.adminConfig.min_saldo_ambil_order ?? 10000);
+          this.adminConfig.komisi_persen = Number(val.komisi_persen ?? 15);
+          if (val.admin_wa) {
+            let wa = String(val.admin_wa).trim().replace(/[^0-9]/g, '');
+            if (wa.startsWith('0')) wa = '62' + wa.slice(1);
+            this.adminConfig.admin_wa = wa;
+          }
+        }
+      });
+
+      db.ref('settings/bank_admin').on('value', snap => {
+        if (snap.exists()) {
+          let bankData = snap.val();
+          this.adminConfig.rekening_admin = {
+            bank: bankData.nama_bank || bankData.bank || 'BANK BCA',
+            nomor: bankData.nomor_rekening || bankData.nomor || 'Belum diisi Admin',
+            atas_nama: bankData.atas_nama || 'Admin SiapJek'
+          };
+        }
+      });
+
+      // Firebase Auth menyimpan sesi secara lokal. Saat driver membuka aplikasi
+      // kembali, pulihkan sesi tanpa meminta email/kata sandi lagi.
+      auth.onAuthStateChanged(user => {
+        if (user) this.pulihkanSesiDriverAuth(user);
+      });
+    },
+
+    async pulihkanSesiDriverAuth(user) {
+      if (!user || !user.uid || this.isLoggingIn) return;
+      if (this.isLoggedIn && this.firebaseUser && this.firebaseUser.uid === user.uid && this.driverId) return;
+      try {
+        const snap = await db.ref('drivers').once('value');
+        const drivers = snap.val() || {};
+        let matchedId = '';
+        let matchedDriver = null;
+        for (const [id, data] of Object.entries(drivers)) {
+          if (data && (String(data.uid || '') === user.uid || String(data.auth_uid || '') === user.uid)) {
+            matchedId = id;
+            matchedDriver = data;
+            break;
+          }
+        }
+        if (!matchedId || !matchedDriver) return;
+        const status = String(matchedDriver.status || '').trim().toLowerCase();
+        const inactive = ['nonaktif', 'tidak aktif', 'non-aktif', 'inactive', 'disabled', 'diblokir', 'blokir', 'ditangguhkan'];
+        if (matchedDriver.aktif === false || matchedDriver.is_active === false || matchedDriver.disabled === true || inactive.includes(status)) {
+          await auth.signOut();
+          this.loginMessage = 'Akun Driver sedang tidak aktif. Silakan hubungi Admin SiapJek.';
+          return;
+        }
+        this.firebaseUser = user;
+        this.driverId = matchedId;
+        this.inputDriverId = matchedId;
+        this.isLoggedIn = true;
+        this.loginMessage = '';
+        localStorage.setItem('siapjek_driver_id', matchedId);
+        this.listenDriverData();
+        this.dengarkanStatusTransaksiDriver();
+        this.startGPS();
+        this.initMap();
+      } catch (error) {
+        console.warn('Pemulihan sesi driver gagal:', error);
+      }
+    },
+
+    openActionConfirm(title, message, callback) {
+      this.actionModalTitle = title;
+      this.actionModalMessage = message;
+      this.actionModalCallback = callback;
+      this.showActionModal = true;
+    },
+
+    initMap() {
+      this.$nextTick(() => {
+        const mapEl = document.getElementById('map');
+        if (!mapEl || typeof mapboxgl === 'undefined') return;
+
+        if (this.map) {
+          setTimeout(() => { if (this.map) this.map.resize(); }, 200);
+          return;
+        }
+
+        mapboxgl.accessToken = this.mapboxToken;
+
+        try {
+          this.map = new mapboxgl.Map({
+            container: 'map',
+            style: this.currentMapStyle,
+            center: [this.driverLng, this.driverLat],
+            zoom: 16,
+            pitch: this.map3DMode ? 50 : 0,
+            bearing: 0,
+            attributionControl: false
+          });
+
+          this.map.on('style.load', () => {
+            if (!this.map) return;
+            this.ensureRouteLayers();
+            this.updateMapMarkers();
+            if (this.myActiveOrder) {
+              this.updateMapRoute(true);
+            }
+          });
+
+          this.map.on('load', () => {
+            if (!this.map) return;
+            this.map.resize();
+            this.ensureRouteLayers();
+            this.updateMapRoute(true);
+          });
+
+          this.map.on('dragstart', () => { this.mapUserInteracting = true; this.mapFollowDriver = false; });
+          this.map.on('zoomstart', () => { this.mapUserInteracting = true; });
+
+        } catch (err) {
+          console.error('Mapbox Init Error:', err);
+        }
+      });
+    },
+
+    changeMapStyle(styleUrl) {
+      this.currentMapStyle = styleUrl;
+      this.showStylePicker = false;
+      if (this.map) {
+        this.destroyDriverMarker();
+        if (this.pickupMarker) { this.pickupMarker.remove(); this.pickupMarker = null; }
+        if (this.destinationMarker) { this.destinationMarker.remove(); this.destinationMarker = null; }
+        this.map.setStyle(styleUrl);
+      }
+    },
+
+    ensureRouteLayers() {
+      if (!this.map || !this.map.isStyleLoaded()) return;
+
+      const layers = [
+        { sourceId: 'route-pickup', layerId: 'route-pickup-line', color: '#0284c7', width: 6 },
+        { sourceId: 'route-destination', layerId: 'route-destination-line', color: '#f97316', width: 6 }
+      ];
+
+      layers.forEach(item => {
+        if (!this.map.getSource(item.sourceId)) {
+          this.map.addSource(item.sourceId, {
+            type: 'geojson',
+            data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } }
+          });
+        }
+        if (!this.map.getLayer(item.layerId)) {
+          this.map.addLayer({
+            id: item.layerId,
+            type: 'line',
+            source: item.sourceId,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': item.color,
+              'line-width': item.width,
+              'line-opacity': 0.95
+            }
+          });
+        }
+      });
+    },
+
+    setRouteSource(sourceId, geometry) {
+      if (!this.map || !geometry || !this.map.getSource(sourceId)) return;
+      this.map.getSource(sourceId).setData({
+        type: 'Feature',
+        properties: {},
+        geometry: geometry
+      });
+    },
+
+    resetLiveTrack(orderId = null) {
+      this.liveTrackCoordinates = [];
+      this.liveTrackOrderId = orderId;
+      this.lastTrackPointAt = 0;
+      // Tidak menggambar jejak GPS terpisah; yang terlihat hanya rute navigasi jalan.
+    },
+
+    recordLiveTrackPoint(lng, lat, accuracy = null) {
+      if (!this.map || !this.myActiveOrder || !Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      // Abaikan titik GPS yang terlalu tidak akurat agar jejak tidak meloncat ke lokasi palsu.
+      if (Number.isFinite(accuracy) && accuracy > 60) return;
+      const orderId = String(this.myActiveOrder._firebaseKey || this.myActiveOrder.id || 'active-order');
+      if (this.liveTrackOrderId !== orderId) this.resetLiveTrack(orderId);
+
+      const now = Date.now();
+      const previous = this.liveTrackCoordinates[this.liveTrackCoordinates.length - 1];
+      if (previous) {
+        const dx = (lng - previous[0]) * 111320 * Math.cos(lat * Math.PI / 180);
+        const dy = (lat - previous[1]) * 111320;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const elapsed = Math.max(1, (now - this.lastTrackPointAt) / 1000);
+        // Filter loncatan GPS yang tidak masuk akal, tetapi izinkan titik berikutnya saat GPS pulih.
+        if (distance > Math.max(120, elapsed * 45)) return;
+        if (distance < 3 && now - this.lastTrackPointAt < 4000) return;
+      }
+
+      this.liveTrackCoordinates.push([lng, lat]);
+      this.lastTrackPointAt = now;
+      // Batasi panjang jejak untuk menjaga performa peta di HP.
+      if (this.liveTrackCoordinates.length > 600) this.liveTrackCoordinates.splice(0, this.liveTrackCoordinates.length - 600);
+      this.setRouteSource('driver-live-track', {
+        type: 'LineString',
+        coordinates: this.liveTrackCoordinates.length > 1 ? this.liveTrackCoordinates : []
+      });
+    },
+
+    makeLocationMarker(label, color, iconClass) {
+      const el = document.createElement('div');
+      el.className = 'map-location-marker';
+      const tag = document.createElement('div');
+      tag.className = 'map-location-label';
+      tag.style.background = color;
+      tag.textContent = label;
+      const pin = document.createElement('div');
+      pin.className = 'map-location-pin';
+      pin.style.background = color;
+      const icon = document.createElement('i');
+      icon.className = iconClass;
+      pin.appendChild(icon);
+      el.appendChild(tag);
+      el.appendChild(pin);
+      return el;
+    },
+    
+    createMotorBebekMarkerElement() {
+      const el = document.createElement('div');
+      el.className = 'driver-motor-icon';
+      el.setAttribute('aria-label', 'Posisi motor driver');
+      el.innerHTML = `
+        <svg viewBox='0 0 64 64' role='img' aria-hidden='true'>
+          <g transform='rotate(-90 32 32)'>
+            <rect x='46' y='29' width='12' height='6' rx='3' fill='#0f172a'/>
+            <rect x='6' y='28' width='14' height='8' rx='2' fill='#0f172a'/>
+            <path d='M12 26 L22 22 L40 24 L45 28 L45 36 L40 40 L22 42 L12 38 Z' fill='#334155' stroke='#0f172a' stroke-width='1.5'/>
+            <path d='M25 24 L36 24 L36 40 L25 40 Z' fill='#0f172a'/>
+            <path d='M40 20 L44 32 L40 44' fill='none' stroke='#0f172a' stroke-width='3.5' stroke-linecap='round'/>
+            <path d='M45 29 L49 32 L45 35 Z' fill='#fef08a'/>
+            <path d='M12 28 L9 32 L12 36 Z' fill='#ef4444'/>
+            <rect x='20' y='22' width='16' height='20' rx='6' fill='#10b981'/>
+            <circle cx='29' cy='32' r='7' fill='#047857' stroke='#ffffff' stroke-width='1.5'/>
+          </g>
+        </svg>`;
+      return el;
+    },
+
+    routeBearing(a, b) {
+      if (!a || !b) return this.lastValidHeading || 0;
+      const toRad = Math.PI / 180;
+      const dLon = (b[0] - a[0]) * toRad;
+      const lat1 = a[1] * toRad, lat2 = b[1] * toRad;
+      const y = Math.sin(dLon) * Math.cos(lat2);
+      const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    },
+
+    snapPointToRoute(lng, lat) {
+      const coords = this.routeCoordinates;
+      if (!Array.isArray(coords) || coords.length < 2) return { lng, lat, heading: this.lastValidHeading || 0, snapped: false };
+      const cosLat = Math.cos(lat * Math.PI / 180);
+      let best = null;
+      for (let i = 0; i < coords.length - 1; i++) {
+        const a = coords[i], b = coords[i + 1];
+        const ax = (a[0] - lng) * cosLat, ay = a[1] - lat;
+        const bx = (b[0] - lng) * cosLat, by = b[1] - lat;
+        const dx = bx - ax, dy = by - ay;
+        const den = dx * dx + dy * dy;
+        const t = den ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / den)) : 0;
+        const px = ax + t * dx, py = ay + t * dy;
+        const dist2 = px * px + py * py;
+        if (!best || dist2 < best.dist2) {
+          best = { dist2, lng: lng + px / (cosLat || 1), lat: lat + py,
+            heading: this.routeBearing(a, b), segment: i };
+        }
+      }
+      // Jangan memindahkan marker ke jalan yang jauh dari GPS sebenarnya.
+      const meters = best ? Math.sqrt(best.dist2) * 111320 : Infinity;
+      if (!best) return { lng, lat, heading: this.lastValidHeading || 0, snapped: false, distanceMeters: Infinity };
+      if (meters > 65) return { lng, lat, heading: this.lastValidHeading || 0, snapped: false, distanceMeters: meters };
+      return { lng: best.lng, lat: best.lat, heading: best.heading, snapped: true, distanceMeters: meters };
+    },
+
+    animateDriverMarkerTo(lng, lat, heading = null) {
+      if (!this.map || !Number.isFinite(lng) || !Number.isFinite(lat)) return;
+
+      if (!this.driverMarker) {
+        const el = this.createMotorBebekMarkerElement();
+        this.driverMarker = new mapboxgl.Marker({
+          element: el, anchor: 'center', rotationAlignment: 'map', pitchAlignment: 'map'
+        }).setLngLat([lng, lat]).addTo(this.map);
+        if (Number.isFinite(heading)) this.driverMarker.setRotation(heading);
+        return;
+      }
+
+      if (this.driverMarkerAnimation) cancelAnimationFrame(this.driverMarkerAnimation);
+
+      const start = this.driverMarker.getLngLat();
+      const startLng = start.lng; const startLat = start.lat;
+      
+      let targetHeading = Number.isFinite(heading) ? heading : (this.lastValidHeading || 0);
+      // Jangan memakai kompas perangkat. Arah datang dari geometri rute atau perpindahan GPS.
+      if (!Number.isFinite(heading)) {
+        const distance = Math.sqrt(Math.pow(lng - startLng, 2) + Math.pow(lat - startLat, 2));
+        if (distance > 0.00002) {
+          const dy = lat - startLat;
+          const dx = Math.cos(Math.PI / 180 * startLat) * (lng - startLng);
+          targetHeading = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+        }
+      }
+      this.lastValidHeading = targetHeading;
+
+      const deltaLng = ((lng - startLng + 540) % 360) - 180;
+      const currentHeading = Number(this.driverMarker.getRotation() || 0);
+      let deltaHeading = ((targetHeading - currentHeading + 540) % 360) - 180;
+      const duration = 500;
+      const startTime = performance.now();
+
+      const step = now => {
+        const t = Math.min(1, (now - startTime) / duration);
+        this.driverMarker.setLngLat([ startLng + deltaLng * t, startLat + (lat - startLat) * t ]);
+        this.driverMarker.setRotation(currentHeading + deltaHeading * t);
+        if (t < 1) { this.driverMarkerAnimation = requestAnimationFrame(step); } 
+        else { this.driverMarkerAnimation = null; }
+      };
+      this.driverMarkerAnimation = requestAnimationFrame(step);
+    },
+
+    destroyDriverMarker() {
+      if (this.driverMarkerAnimation) cancelAnimationFrame(this.driverMarkerAnimation);
+      this.driverMarkerAnimation = null;
+      if (this.driverMarker) { this.driverMarker.remove(); this.driverMarker = null; }
+    },
+
+    toggle3DMapMode() {
+      this.map3DMode = !this.map3DMode;
+      if (this.map) {
+        this.map.easeTo({
+          pitch: this.map3DMode ? 55 : 0,
+          bearing: 0,
+          duration: 500
+        });
+      }
+    },
+
+    focusMapOnDriver() {
+      if (!this.map) return;
+      this.mapFollowDriver = true;
+      this.mapUserInteracting = false;
+      this.map.easeTo({
+        center: [this.driverLng, this.driverLat],
+        zoom: 16,
+        pitch: this.map3DMode ? 55 : 0,
+        bearing: 0,
+        duration: 400
+      });
+    },
+
+    openExternalNavigation(provider) {
+      if (!this.myActiveOrder) return;
+      const status = this.myActiveOrder.status || '';
+      const headingToDestination = ['mengantar', 'diantar', 'sampai_lokasi'].includes(status);
+      const lat = Number(headingToDestination ? this.myActiveOrder.lat_tujuan : this.myActiveOrder.lat_jemput);
+      const lng = Number(headingToDestination ? this.myActiveOrder.lng_tujuan : this.myActiveOrder.lng_jemput);
+      
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return alert('Koordinat lokasi tidak valid');
+
+      const destination = `${lat},${lng}`;
+      const url = provider === 'waze'
+        ? `https://waze.com/ul?ll=${encodeURIComponent(destination)}&navigate=yes`
+        : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+      window.open(url, '_blank');
+    },
+
+    async updateMapRoute(forceFit = false) {
+      if (!this.map || !this.map.isStyleLoaded()) return;
+      const now = Date.now();
+      const routeCheck = (Array.isArray(this.routeCoordinates) && this.routeCoordinates.length > 1)
+        ? this.snapPointToRoute(this.driverLng, this.driverLat) : null;
+      const clearlyOffRoute = !!routeCheck && Number(routeCheck.distanceMeters) > 45;
+      const minRefreshMs = clearlyOffRoute ? 3000 : 5000;
+      if (!forceFit && now - this.lastRouteUpdateAt < minRefreshMs) return;
+      this.lastRouteUpdateAt = now;
+      const requestSeq = ++this.routeRequestSeq;
+      this.ensureRouteLayers();
+      this.updateMapMarkers();
+
+      const order = this.myActiveOrder;
+      if (!order) {
+        this.clearOrderMap();
+        this.routeCoordinates = [];
+        this.resetLiveTrack(null);
+        return;
+      }
+
+      const status = order.status || '';
+      const headingToDestination = ['mengantar', 'diantar', 'sampai_lokasi'].includes(status);
+      const targetLat = Number(headingToDestination ? order.lat_tujuan : order.lat_jemput);
+      const targetLng = Number(headingToDestination ? order.lng_tujuan : order.lng_jemput);
+
+      if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) return;
+
+      const coords = `${this.driverLng},${this.driverLat};${targetLng},${targetLat}`;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coords}?geometries=geojson&overview=full&steps=true&access_token=${this.mapboxToken}`;
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (requestSeq !== this.routeRequestSeq || !this.map) return;
+
+        if (data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          this.routeCoordinates = Array.isArray(route.geometry?.coordinates) ? route.geometry.coordinates : [];
+          // Koreksi posisi visual motor ke garis rute terdekat dan arahkan sejajar jalan.
+          const snapped = this.snapPointToRoute(this.driverLng, this.driverLat);
+          if (snapped.snapped) {
+            this.lastValidHeading = snapped.heading;
+            this.driverHeading = snapped.heading;
+            if (this.driverMarker) this.animateDriverMarkerTo(snapped.lng, snapped.lat, snapped.heading);
+          }
+          const durationMinutes = Math.max(1, Math.round(Number(route.duration || 0) / 60));
+          const distanceKm = Number(route.distance || 0) / 1000;
+          
+          this.routeEtaText = `${durationMinutes} mnt`;
+          this.routeDistanceText = `${distanceKm < 10 ? distanceKm.toFixed(1) : distanceKm.toFixed(0)} km`;
+
+          const activeSourceId = headingToDestination ? 'route-destination' : 'route-pickup';
+          const inactiveSourceId = headingToDestination ? 'route-pickup' : 'route-destination';
+
+          this.setRouteSource(activeSourceId, route.geometry);
+          this.setRouteSource(inactiveSourceId, { type: 'LineString', coordinates: [] });
+
+          if (!this.mapHasFittedOrder || forceFit) {
+            const coordsToFit = route.geometry.coordinates || [];
+            if (coordsToFit.length) {
+              const bounds = coordsToFit.reduce(
+                (b, coord) => b.extend(coord),
+                new mapboxgl.LngLatBounds(coordsToFit[0], coordsToFit[0])
+              );
+
+              this.map.fitBounds(bounds, {
+                padding: { top: 80, right: 60, bottom: 230, left: 60 },
+                maxZoom: 16, duration: 500
+              });
+              this.mapHasFittedOrder = true;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Gagal memuat rute Mapbox:', e);
+      }
+    },
+
+    clearOrderMap() {
+      if (!this.map) return;
+      ['route-pickup','route-destination'].forEach(id => {
+        const source = this.map.getSource(id);
+        if (source) source.setData({type:'FeatureCollection',features:[]});
+      });
+      if (this.pickupMarker) { this.pickupMarker.remove(); this.pickupMarker = null; }
+      if (this.destinationMarker) { this.destinationMarker.remove(); this.destinationMarker = null; }
+      this.mapHasFittedOrder = false;
+      this.routeCoordinates = [];
+      this.liveTrackCoordinates = [];
+      this.liveTrackOrderId = null;
+      this.lastTrackPointAt = 0;
+      this.routeEtaText = '-- menit';
+      this.routeDistanceText = '-- km';
+    },
+
+    resetMapAfterOrder() {
+      this.clearOrderMap();
+      this.mapFollowDriver = true;
+      if (this.map) {
+        this.map.easeTo({ center: [this.driverLng, this.driverLat], zoom: 16, pitch: 0, bearing: 0, duration: 400 });
+      }
+    },
+
+    updateMapMarkers() {
+      if (!this.map) return;
+      const visualPosition = this.snapPointToRoute(this.driverLng, this.driverLat);
+      this.animateDriverMarkerTo(visualPosition.lng, visualPosition.lat, visualPosition.heading);
+
+      if (!this.myActiveOrder) return;
+
+      const order = this.myActiveOrder;
+      const latJemput = Number(order.lat_jemput); const lngJemput = Number(order.lng_jemput);
+      const latTujuan = Number(order.lat_tujuan); const lngTujuan = Number(order.lng_tujuan);
+      const valid = (lat,lng) => Number.isFinite(lat) && Number.isFinite(lng);
+
+      if (valid(latJemput, lngJemput)) {
+        if (!this.pickupMarker) {
+          this.pickupMarker = new mapboxgl.Marker({
+            element: this.makeLocationMarker('JEMPUT', '#0284c7', 'fa-solid fa-location-dot'), anchor: 'bottom'
+          }).setLngLat([lngJemput, latJemput]).addTo(this.map);
+        } else { this.pickupMarker.setLngLat([lngJemput, latJemput]); }
+      }
+
+      if (valid(latTujuan, lngTujuan)) {
+        if (!this.destinationMarker) {
+          this.destinationMarker = new mapboxgl.Marker({
+            element: this.makeLocationMarker('TUJUAN', '#f97316', 'fa-solid fa-flag-checkered'), anchor: 'bottom'
+          }).setLngLat([lngTujuan, latTujuan]).addTo(this.map);
+        } else { this.destinationMarker.setLngLat([lngTujuan, latTujuan]); }
+      }
+    },
+
+    startGPS() {
+      if (navigator.geolocation && !this.gpsWatcher) {
+        this.gpsWatcher = navigator.geolocation.watchPosition((pos) => {
+          const targetLat = Number(pos.coords.latitude);
+          const targetLng = Number(pos.coords.longitude);
+          const accuracy = Number(pos.coords.accuracy);
+          const speed = Number(pos.coords.speed);
+
+          if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) return;
+
+          this.gpsAccuracy = Number.isFinite(accuracy) ? accuracy : null;
+          this.gpsStatus = accuracy <= 20 ? 'Sinyal Bagus' : 'Sinyal Lemah';
+
+          const prevLat = Number(this.driverLat), prevLng = Number(this.driverLng);
+          this.driverLat = targetLat;
+          this.driverLng = targetLng;
+          // Heading dihitung dari perpindahan GPS; pos.coords.heading/kompas HP sengaja diabaikan.
+          if (Number.isFinite(prevLat) && Number.isFinite(prevLng) && (Math.abs(targetLat-prevLat)+Math.abs(targetLng-prevLng)) > 0.000005) {
+            const movementHeading = this.routeBearing([prevLng, prevLat], [targetLng, targetLat]);
+            if (Number.isFinite(movementHeading)) { this.driverHeading = movementHeading; this.lastValidHeading = movementHeading; }
+          }
+
+          if (this.map) {
+            const visualPosition = this.snapPointToRoute(targetLng, targetLat);
+            if (visualPosition.snapped) { this.driverHeading = visualPosition.heading; this.lastValidHeading = visualPosition.heading; }
+            this.animateDriverMarkerTo(visualPosition.lng, visualPosition.lat, visualPosition.heading);
+            if (this.mapFollowDriver && !this.mapUserInteracting) {
+              this.map.easeTo({ center: [targetLng, targetLat], bearing: 0, duration: 450, essential: true });
+            }
+            if (this.myActiveOrder) {
+              // Gaya navigasi seperti aplikasi ride-hailing: tampilkan rute jalan ke tujuan, bukan garis jejak GPS.
+              this.updateMapMarkers();
+              // Garis navigasi oranye/biru dihitung ulang dari posisi GPS terbaru saat diperlukan.
+              this.updateMapRoute(false);
+            }
+          }
+
+          // Koordinat terbaru disimpan di memori oleh watchPosition.
+          // Pengiriman ke Firebase diatur terpisah: 2 detik saat ada pesanan,
+          // dan 12 detik saat online tanpa pesanan, agar lebih konsisten dan hemat.
+        }, err => {
+          if (err && err.code === 1) this.gpsStatus = 'Izin GPS Ditolak';
+          else if (err && err.code === 2) this.gpsStatus = 'Lokasi Tidak Tersedia';
+          else if (err && err.code === 3) this.gpsStatus = 'GPS Timeout';
+          else this.gpsStatus = 'GPS Mati';
+          console.warn('GPS driver:', err && err.message ? err.message : err);
+        }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 });
+      }
+
+      // Publikasikan posisi terbaru secara berkala. watchPosition tetap menjadi
+      // sumber koordinat GPS; timer ini hanya mengirim koordinat terbaru ke Firebase.
+      if (!this.gpsPublishTimer) {
+        this.gpsPublishTimer = setInterval(() => {
+          if (!this.driverId || !this.driverData?.is_online || !Number.isFinite(Number(this.driverLat)) || !Number.isFinite(Number(this.driverLng))) return;
+          const now = Date.now();
+          const hasActiveOrder = !!this.myActiveOrder;
+          const intervalMs = hasActiveOrder ? 2000 : 12000;
+          if (now - Number(this.lastGpsPersistAt || 0) < intervalMs) return;
+          this.lastGpsPersistAt = now;
+          db.ref('drivers/' + this.driverId).update({
+            lat: Number(this.driverLat),
+            lng: Number(this.driverLng),
+            heading: Number(this.driverHeading) || 0,
+            accuracy: Number.isFinite(Number(this.gpsAccuracy)) ? Number(this.gpsAccuracy) : null,
+            updatedAt: now
+          }).catch(err => console.warn('GPS driver gagal disimpan:', err));
+        }, 500);
+      }
+    },
+
+    stopGPS() {
+      if (this.gpsWatcher && navigator.geolocation) {
+        navigator.geolocation.clearWatch(this.gpsWatcher);
+        this.gpsWatcher = null;
+      }
+      if (this.gpsPublishTimer) {
+        clearInterval(this.gpsPublishTimer);
+        this.gpsPublishTimer = null;
+      }
+    },
+
+    async tungguKoneksiFirebase(timeoutMs = 10000) {
+      try {
+        if (typeof db.goOnline === 'function') db.goOnline();
+        const connectedRef = db.ref('.info/connected');
+        const connected = await Promise.race([
+          connectedRef.once('value').then(snap => !!snap.val()),
+          new Promise(resolve => setTimeout(() => resolve(false), timeoutMs))
+        ]);
+        if (!connected) {
+          // Paksakan Firebase mencoba menyambung lagi; jangan menganggap status online
+          // hanya berdasarkan ikon jaringan Android.
+          if (typeof db.goOnline === 'function') db.goOnline();
+          await new Promise(resolve => setTimeout(resolve, 700));
+          const retry = await Promise.race([
+            connectedRef.once('value').then(snap => !!snap.val()),
+            new Promise(resolve => setTimeout(() => resolve(false), 5000))
+          ]);
+          if (!retry) throw new Error('Koneksi Firebase belum pulih. Pastikan internet aktif, lalu coba lagi.');
+        }
+        return true;
+      } catch (err) {
+        throw err;
+      }
+    },
+
+    async simpanStatusPesanan(orderId, updates) {
+      await this.tungguKoneksiFirebase(7000);
+      // Timeout hanya untuk memberi tahu pengguna; tidak mengulang write otomatis agar
+      // tindakan seperti penyelesaian pesanan/saldo tidak terproses dua kali.
+      await Promise.race([
+        db.ref('orders/' + orderId).update(updates),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Server belum merespons. Koneksi mungkin masih dipulihkan.')), 15000))
+      ]);
+    },
+
+    async pulihkanSetelahKembali() {
+      if (!this.isLoggedIn || !this.driverId || this.isRestoringConnection) return;
+      this.isRestoringConnection = true;
+      try {
+        if (typeof db.goOnline === 'function') db.goOnline();
+        await this.tungguKoneksiFirebase(5000);
+        // Ikat ulang listener agar data pesanan/chat segar setelah WebView lama ditangguhkan.
+        this.listenDriverData();
+        if (!this.gpsWatcher) this.startGPS();
+        if (this.map) {
+          setTimeout(() => {
+            try {
+              if (this.map) {
+                this.map.resize();
+                this.updateMapMarkers();
+                this.updateMapRoute(true);
+              }
+            } catch (e) { console.warn('Peta belum siap setelah kembali:', e); }
+          }, 400);
+        } else {
+          this.initMap();
+        }
+      } catch (e) {
+        console.warn('Firebase masih menyambung setelah aplikasi kembali:', e);
+      } finally {
+        this.isRestoringConnection = false;
+      }
+    },
+
+    authErrorText(error) {
+      const code = error?.code || '';
+      const messages = {
+        'auth/invalid-email': 'Format email tidak valid.',
+        'auth/user-not-found': 'Email belum terdaftar di Firebase Authentication.',
+        'auth/wrong-password': 'Kata sandi salah. Coba periksa kembali.',
+        'auth/invalid-credential': 'Email atau kata sandi salah.',
+        'auth/too-many-requests': 'Terlalu banyak percobaan. Coba lagi beberapa saat.',
+        'auth/network-request-failed': 'Koneksi internet bermasalah. Coba lagi.',
+        'auth/email-already-in-use': 'Email tersebut sudah digunakan akun lain.',
+        'auth/requires-recent-login': 'Demi keamanan, keluar lalu masuk kembali sebelum mengganti email.',
+        'auth/operation-not-allowed': 'Login email/sandi belum diaktifkan di Firebase Authentication.'
+      };
+      return messages[code] || error?.message || 'Terjadi kesalahan. Silakan coba lagi.';
+    },
+
+    async loginWithEmail() {
+      if (this.isLoggingIn) return;
+      const email = String(this.inputEmail || '').trim().toLowerCase();
+      const password = String(this.inputPassword || '');
+      if (!email || !password) { this.loginMessage = 'Masukkan email dan kata sandi.'; return; }
+      this.isLoggingIn = true;
+      this.loginMessage = 'Memverifikasi akun driver...';
+      let authUser = null;
+      try {
+        const credential = await firebase.auth().signInWithEmailAndPassword(email, password);
+        authUser = credential.user;
+        if (!authUser || !authUser.uid) throw new Error('Identitas akun tidak dapat diverifikasi.');
+
+        // Akses driver hanya diberikan bila UID Firebase sudah ditautkan ke profil
+        // driver oleh Admin. Email saja tidak cukup untuk memperoleh akses.
+        const driversSnap = await db.ref('drivers').once('value');
+        const drivers = driversSnap.val() || {};
+        let matchedId = '';
+        let matchedDriver = null;
+        for (const [id, data] of Object.entries(drivers)) {
+          if (data && (String(data.uid || '') === authUser.uid || String(data.auth_uid || '') === authUser.uid)) {
+            matchedId = id;
+            matchedDriver = data;
+            break;
+          }
+        }
+
+        if (!matchedId || !matchedDriver) {
+          await firebase.auth().signOut();
+          authUser = null;
+          throw new Error('Akun ini belum didaftarkan sebagai Driver oleh Admin. Silakan masuk melalui aplikasi Pelanggan atau hubungi Admin SiapJek.');
+        }
+
+        const status = String(matchedDriver.status || '').trim().toLowerCase();
+        const inactiveStatuses = ['nonaktif', 'tidak aktif', 'non-aktif', 'inactive', 'disabled', 'diblokir', 'blokir', 'ditangguhkan'];
+        if (matchedDriver.aktif === false || matchedDriver.is_active === false || matchedDriver.disabled === true || inactiveStatuses.includes(status)) {
+          await firebase.auth().signOut();
+          authUser = null;
+          throw new Error('Akun Driver sedang tidak aktif. Silakan hubungi Admin SiapJek.');
+        }
+
+        // Jangan otomatis menautkan UID berdasarkan kecocokan email; hanya Admin
+        // yang boleh menetapkan identitas akun Driver pada data driver.
+        this.firebaseUser = authUser;
+        this.driverId = matchedId;
+        this.inputDriverId = matchedId;
+        this.isLoggedIn = true;
+        this.loginMessage = '';
+        localStorage.setItem('siapjek_driver_id', matchedId);
+        this.listenDriverData();
+        this.dengarkanStatusTransaksiDriver();
+        this.startGPS();
+        this.initMap();
+      } catch (error) {
+        console.error('Login email driver gagal:', error);
+        this.loginMessage = this.authErrorText(error);
+      } finally { this.isLoggingIn = false; }
+    },
+
+        async kirimResetPassword() {
+      const email = String(this.inputEmail || '').trim().toLowerCase();
+      if (!email) { this.loginMessage = 'Masukkan email terdaftar terlebih dahulu.'; return; }
+      if (this.isAuthActionBusy) return;
+      this.isAuthActionBusy = true;
+      this.loginMessage = 'Mengirim tautan pemulihan...';
+      try {
+        await firebase.auth().sendPasswordResetEmail(email);
+        this.loginMessage = 'Jika email terdaftar, tautan untuk membuat kata sandi baru telah dikirim. Periksa Inbox dan Spam.';
+      } catch (error) {
+        console.error('Reset password gagal:', error);
+        this.loginMessage = this.authErrorText(error);
+      } finally { this.isAuthActionBusy = false; }
+    },
+
+    async kirimVerifikasiGantiEmail() {
+      const email = String(this.newEmail || '').trim().toLowerCase();
+      const user = firebase.auth().currentUser;
+      if (!user) { this.emailChangeMessage = 'Sesi login tidak ditemukan. Silakan masuk kembali.'; return; }
+      if (!email) { this.emailChangeMessage = 'Masukkan email baru terlebih dahulu.'; return; }
+      if (email === String(user.email || '').toLowerCase()) { this.emailChangeMessage = 'Email baru sama dengan email yang digunakan saat ini.'; return; }
+      if (this.isAuthActionBusy) return;
+      this.isAuthActionBusy = true;
+      this.emailChangeMessage = 'Mengirim tautan verifikasi ke email baru...';
+      try {
+        if (typeof user.verifyBeforeUpdateEmail !== 'function') {
+          throw new Error('Fitur verifikasi perubahan email tidak tersedia pada SDK ini. Perbarui Firebase Authentication SDK terlebih dahulu.');
+        }
+        await user.verifyBeforeUpdateEmail(email);
+        this.emailChangeMessage = 'Tautan verifikasi dikirim ke ' + email + '. Buka email tersebut dan konfirmasi. Email akun berubah setelah verifikasi selesai; bila belum tersinkron, masuk kembali lalu hubungi admin untuk memperbarui email di profil driver.';
+      } catch (error) {
+        console.error('Verifikasi ganti email gagal:', error);
+        this.emailChangeMessage = this.authErrorText(error);
+      } finally { this.isAuthActionBusy = false; }
+    },
+
+    async loginDriver() {
+      // ID Driver saja bukan bukti autentikasi dan tidak boleh membuka aplikasi.
+      this.loginMessage = 'Login menggunakan email dan kata sandi akun Driver yang didaftarkan Admin.';
+      return;
+    },
+
+        logoutDriver() {
+      this.openActionConfirm('Keluar Akun', 'Yakin ingin keluar?', () => {
+        this.stopGPS();
+        if (this.driverId) {
+          db.ref('drivers/' + this.driverId).update({ online: false, is_online: false });
+          db.ref('drivers/' + this.driverId).off();
+        }
+        db.ref('orders').off();
+        if (this.driverId) db.ref('driver_hidden_order_history/' + this.driverId).off();
+        db.ref('topups').off();
+        db.ref('withdrawals').off();
+        if (this.chatNotifyRef) { this.chatNotifyRef.off('child_added'); this.chatNotifyRef = null; }
+        this.chatNotifyOrderId = '';
+        this.dismissDriverNotification();
+        localStorage.removeItem('siapjek_driver_id');
+        if (firebase.auth().currentUser) firebase.auth().signOut().catch(err => console.warn('Logout Firebase Auth:', err));
+        this.firebaseUser = null;
+        this.isLoggedIn = false;
+        this.driverId = '';
+        this.destroyDriverMarker();
+        if (this.map) { this.map.remove(); this.map = null; }
+      });
+    },
+
+    listenDriverData() {
+      if (!this.driverId) return;
+
+      db.ref('drivers/' + this.driverId).off();
+      db.ref('orders').off();
+      db.ref('driver_hidden_order_history/' + this.driverId).off();
+      db.ref('driver_hidden_order_history/' + this.driverId).on('value', snap => {
+        this.hiddenOrderHistory = snap.val() || {};
+        this.completedOrders = (this.completedOrders || []).filter(order => !this.hiddenOrderHistory[String(order._firebaseKey || order.id)]);
+      });
+
+      db.ref('drivers/' + this.driverId).on('value', snap => {
+        if(snap.exists()) {
+          let val = snap.val();
+          this.driverData = { 
+            id: snap.key, 
+            nama: val.nama || 'Driver', 
+            no_hp: val.no_hp || '-', 
+            plat_nomor: val.plat_nomor || '-', 
+            foto: val.foto || '', 
+            saldo: Number(val.saldo || 0), 
+            is_online: val.online ?? val.is_online ?? false 
+          };
+        }
+      });
+
+      db.ref('orders').on('value', snap => {
+        let available = []; let completed = []; let active = null;
+        if(snap.exists()) {
+          snap.forEach(c => {
+            let ord = { ...c.val(), id: c.key, _firebaseKey: c.key };
+            const orderStatus = String(ord.status || '').toLowerCase();
+            const terminalStatuses = ['selesai', 'dibatalkan', 'dibatalkan_driver', 'cancelled', 'canceled', 'batal'];
+            // Bersihkan chat untuk pesanan driver ini setiap kali status terminal terdeteksi,
+            // termasuk jika status diubah dari aplikasi pelanggan/admin saat driver offline.
+            if (String(ord.driver_id || '') === String(this.driverId) && terminalStatuses.includes(orderStatus)) {
+              this.hapusChatPesanan(c.key).catch(err => console.warn('Pembersihan chat otomatis akan dicoba lagi:', err));
+            }
+            if (String(ord.driver_id || '') === String(this.driverId) && ['diproses', 'accepted', 'diterima', 'driver_menerima', 'diambil_driver', 'menuju_lokasi', 'menuju_toko', 'menuju_lokasi_jemput', 'menuju_penjemputan', 'mengantar', 'diantar', 'driver_tiba', 'sampai_lokasi', 'tiba_di_lokasi'].includes(orderStatus)) {
+              active = ord;
+            } else if (ord.driver_id === this.driverId && ord.status === 'selesai') {
+              completed.unshift(ord);
+            } else if (!ord.driver_id && ['pending', 'waiting_driver', 'mencari_driver', 'siap', 'diproses'].includes(orderStatus)) {
+              available.unshift(ord);
+            }
+          });
+        }
+
+        const nowAvailableIds = {};
+        available.forEach(ord => { nowAvailableIds[String(ord._firebaseKey || ord.id)] = true; });
+        if (this.hasLoadedOrdersSnapshot) {
+          const newOrders = available.filter(ord => !this.seenAvailableOrderIds[String(ord._firebaseKey || ord.id)]);
+          if (newOrders.length && this.driverData?.is_online && !this.myActiveOrder) {
+            const newest = newOrders[0];
+            this.showDriverNotification('order', 'Pesanan baru masuk!', 'Ada pesanan baru. Tekan untuk melihat daftar pesanan.', String(newest._firebaseKey || newest.id));
+            this.playOrderSound('order');
+          }
+        }
+        this.seenAvailableOrderIds = nowAvailableIds;
+        this.hasLoadedOrdersSnapshot = true;
+        this.previousAvailableCount = available.length;
+
+        this.availableOrders = available;
+        this.completedOrders = completed.filter(order => !this.hiddenOrderHistory[String(order._firebaseKey || order.id)]);
+        this.myActiveOrder = active;
+        this.listenActiveOrderChat(active ? (active._firebaseKey || active.id) : '');
+
+        if (this.isLoggedIn) {
+          this.initMap();
+          if (active) {
+            setTimeout(() => { this.updateMapMarkers(); this.updateMapRoute(true); }, 200);
+          } else {
+            this.resetMapAfterOrder();
+          }
+        }
+      });
+    },
+
+    async toggleOnlineStatus() {
+      if (!this.driverId || !this.driverData) return alert('Sesi driver belum siap. Silakan masuk ulang.');
+      const newStatus = !this.driverData.is_online;
+      try {
+        await db.ref('drivers/' + this.driverId).update({ online: newStatus, is_online: newStatus });
+        alert(newStatus ? '🟢 Anda ONLINE' : '🔴 Anda OFFLINE');
+      } catch (error) {
+        console.error('Gagal mengubah status online:', error);
+        alert('Status online gagal diubah. Periksa koneksi internet lalu coba lagi.');
+      }
+    },
+
+    getOrderGrossFare(ord) {
+      return Math.max(0, Number(ord?.ongkir || 0));
+    },
+
+    getOrderCommission(ord) {
+      if (ord && ord.komisi_admin !== undefined && ord.komisi_admin !== null && !Number.isNaN(Number(ord.komisi_admin))) {
+        return Math.max(0, Number(ord.komisi_admin));
+      }
+      const gross = this.getOrderGrossFare(ord);
+      if (ord?.potongan_komisi !== undefined && ord?.potongan_komisi !== null && !Number.isNaN(Number(ord.potongan_komisi))) {
+        return Math.max(0, Number(ord.potongan_komisi));
+      }
+      const persen = Math.max(0, Number(ord?.komisi_persen ?? this.adminConfig.komisi_persen ?? 15));
+      return Math.max(0, gross * persen / 100);
+    },
+
+    getOrderNetFare(ord) {
+      if (ord && ord.pendapatan_driver !== undefined && ord.pendapatan_driver !== null && !Number.isNaN(Number(ord.pendapatan_driver))) {
+        return Math.max(0, Number(ord.pendapatan_driver));
+      }
+      return Math.max(0, this.getOrderGrossFare(ord) - this.getOrderCommission(ord));
+    },
+
+    getOrderPaymentMethod(ord) {
+      const metode = String(ord?.metode_pembayaran || 'COD').trim().toLowerCase();
+      return metode === 'saldo' ? 'Saldo' : 'COD';
+    },
+
+    async prosesKeuanganPesananSelesai(orderId, order) {
+      const gross = this.getOrderGrossFare(order);
+      if (order?.driver_id && String(order.driver_id) !== String(this.driverId)) {
+        throw new Error('Pesanan ini ditugaskan ke driver lain. Saldo tidak diproses.');
+      }
+      const persen = Math.max(0, Number(order?.komisi_persen ?? this.adminConfig.komisi_persen ?? 15));
+      const commission = Math.max(0, Number(order?.komisi_admin ?? order?.potongan_komisi ?? (gross * persen / 100)));
+      const netDriver = Math.max(0, gross - commission);
+      const metode = this.getOrderPaymentMethod(order);
+      const now = Date.now();
+      const financeRef = db.ref('orders/' + orderId + '/keuangan_status');
+
+      // Klaim hanya untuk mencegah dua tombol/perangkat memproses order bersamaan.
+      // Hasil akhirnya tetap ditulis dengan satu multi-location update atomik.
+      const claim = await financeRef.transaction(v => {
+        if (v && v.status === 'done') return;
+        if (v && v.status === 'processing' && (now - Number(v.started_at || 0)) < 60000) return;
+        return { status: 'processing', started_at: now, driver_id: this.driverId };
+      });
+      if (!claim || !claim.committed) {
+        const current = claim?.snapshot?.val?.() || {};
+        if (current.status === 'done') {
+          return {
+            gross,
+            commission: this.getOrderCommission(order),
+            netDriver: this.getOrderNetFare(order),
+            metode: this.getOrderPaymentMethod(order),
+            saldoAkhir: Number(this.driverData?.saldo || 0),
+            alreadyProcessed: true
+          };
+        }
+        throw new Error('Transaksi keuangan sedang diproses. Jangan tekan berulang.');
+      }
+
+      try {
+        const saldoDelta = metode === 'Saldo' ? netDriver : -commission;
+        const saldoPath = 'drivers/' + this.driverId + '/saldo';
+        const transactionPath = 'driver_transactions/' + this.driverId + '/' + orderId;
+        const adminPath = 'admin_finance/orders/' + orderId;
+        const orderPath = 'orders/' + orderId;
+
+        // Semua perubahan penting dikirim sekaligus. ServerValue.increment membuat
+        // perubahan saldo aman dari dua update yang datang hampir bersamaan.
+        const updates = {};
+        updates[saldoPath] = firebase.database.ServerValue.increment(saldoDelta);
+        updates[orderPath + '/keuangan_diproses'] = true;
+        updates[orderPath + '/keuangan_diproses_pada'] = now;
+        updates[orderPath + '/metode_pembayaran_keuangan'] = metode;
+        updates[orderPath + '/komisi_persen'] = persen;
+        updates[orderPath + '/komisi_admin'] = commission;
+        updates[orderPath + '/pendapatan_driver'] = netDriver;
+        updates[orderPath + '/saldo_driver_delta'] = saldoDelta;
+        updates[adminPath] = {
+          order_id: orderId,
+          driver_id: this.driverId,
+          gross_ongkir: gross,
+          komisi_persen: persen,
+          komisi_admin: commission,
+          pendapatan_driver: netDriver,
+          metode_pembayaran: metode,
+          saldo_driver_delta: saldoDelta,
+          timestamp: now
+        };
+        updates[transactionPath] = {
+          order_id: orderId,
+          jenis: metode === 'Saldo' ? 'pendapatan_order' : 'potongan_komisi_cod',
+          nominal: Math.abs(saldoDelta),
+          saldo_delta: saldoDelta,
+          gross_ongkir: gross,
+          komisi_admin: commission,
+          pendapatan_driver: netDriver,
+          metode_pembayaran: metode,
+          timestamp: now,
+          keterangan: metode === 'Saldo'
+            ? 'Pendapatan bersih order pembayaran SiapPay'
+            : 'Potongan komisi admin dari saldo driver untuk order COD'
+        };
+        updates[orderPath + '/keuangan_status'] = {
+          status: 'done',
+          started_at: now,
+          selesai_pada: now,
+          driver_id: this.driverId
+        };
+
+        await db.ref().update(updates);
+
+        // Baca saldo terbaru setelah update atomik untuk ditampilkan di UI.
+        const saldoSnap = await db.ref(saldoPath).once('value');
+        const saldoAkhir = Number(saldoSnap.val() || 0);
+        if (this.driverData) this.driverData.saldo = saldoAkhir;
+        return { gross, commission, netDriver, metode, saldoAkhir };
+      } catch (err) {
+        // Jangan menghapus klaim 'done' bila update utama sebenarnya sudah berhasil.
+        // Lepaskan hanya klaim processing milik proses ini.
+        try {
+          await financeRef.transaction(v => {
+            if (v && v.status === 'processing' && Number(v.started_at) === now && String(v.driver_id) === String(this.driverId)) return null;
+            return;
+          });
+        } catch (_) {}
+        throw err;
+      }
+    },
+
+    getTodayNetEarnings() {
+      const todayStr = new Date().toDateString();
+      return this.completedOrders
+        .filter(ord => ord.selesai_pada && new Date(ord.selesai_pada).toDateString() === todayStr)
+        .reduce((sum, ord) => sum + this.getOrderNetFare(ord), 0);
+    },
+
+    getTodayCompletedCount() {
+      const todayStr = new Date().toDateString();
+      return this.completedOrders
+        .filter(ord => ord.selesai_pada && new Date(ord.selesai_pada).toDateString() === todayStr).length;
+    },
+
+    async takeOrder(orderId) {
+      const id = String(orderId ?? '').trim();
+      if (!id || this.takingOrderId) return;
+      if (!this.driverId || !this.driverData) {
+        this.takeOrderMessage = 'Sesi driver belum siap. Menyiapkan ulang...';
+        alert('Sesi driver belum siap. Silakan tunggu sebentar, lalu coba lagi.');
+        return;
+      }
+      if (Number(this.driverData.saldo || 0) < Number(this.adminConfig.min_saldo_ambil_order || 0)) {
+        alert('⚠️ Saldo kurang dari minimum untuk mengambil order: Rp ' + Number(this.adminConfig.min_saldo_ambil_order || 0).toLocaleString('id-ID'));
+        return;
+      }
+
+      // Ubah tampilan tombol segera saat disentuh, sebelum menunggu jaringan.
+      this.takingOrderId = id;
+      this.takeOrderMessage = 'Menghubungkan ke server...';
+      let slowNoticeShown = false;
+      if (this.takeOrderSlowTimer) clearTimeout(this.takeOrderSlowTimer);
+      this.takeOrderSlowTimer = setTimeout(() => {
+        slowNoticeShown = true;
+        if (this.takingOrderId === id) {
+          this.takeOrderMessage = 'Server masih memproses. Jangan tekan berulang; pesanan sedang diperiksa.';
+        }
+      }, 7000);
+
+      try {
+        if (typeof db.goOnline === 'function') db.goOnline();
+
+        // Tunggu koneksi Firebase pulih sebentar setelah aplikasi lama di latar belakang.
+        const connectedRef = db.ref('.info/connected');
+        let connected = false;
+        try {
+          const connectionState = await Promise.race([
+            connectedRef.once('value').then(snap => !!snap.val()),
+            new Promise(resolve => setTimeout(() => resolve(false), 4500))
+          ]);
+          connected = connectionState;
+        } catch (_) { connected = false; }
+        if (!connected) {
+          // Tetap lanjutkan transaksi: listener .info/connected bisa terlambat menyegarkan
+          // status walaupun koneksi sebenarnya sudah kembali.
+          if (typeof db.goOnline === 'function') db.goOnline();
+        }
+        this.takeOrderMessage = 'Memastikan pesanan masih tersedia...';
+
+        const orderRef = db.ref('orders/' + id);
+        const transactionPromise = orderRef.transaction(currentData => {
+          if (currentData === null) return;
+          if (currentData.driver_id) return;
+          const status = String(currentData.status || '').toLowerCase();
+          if (!['pending', 'waiting_driver', 'mencari_driver', 'siap', 'diproses'].includes(status)) return;
+          currentData.driver_id = this.driverId;
+          currentData.driver_nama = this.driverData.nama || 'Driver';
+          currentData.driver_hp = this.driverData.no_hp || '';
+          const layanan = String(currentData.layanan || '').toLowerCase().trim();
+          const isMotorOrder = layanan === 'motor' || currentData.toko_id === '-' || String(id).startsWith('OJECK');
+          currentData.status = isMotorOrder ? 'menuju_lokasi' : 'menuju_toko';
+          currentData.diambil_pada = Date.now();
+          return currentData;
+        }, undefined, false);
+
+        // Jangan biarkan tombol terlihat mati tanpa kabar jika jaringan sedang sangat lambat.
+        const result = await Promise.race([
+          transactionPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Waktu respons server terlalu lama')), 25000))
+        ]);
+
+        if (result && result.committed) {
+          this.takeOrderMessage = 'Pesanan berhasil dikonfirmasi!';
+          this.myActiveOrder = { ...(result.snapshot.val() || {}), id, _firebaseKey: id };
+          this.availableOrders = this.availableOrders.filter(o => String(o.id) !== id);
+          this.initMap();
+          setTimeout(() => {
+            try {
+              if (this.map) {
+                this.map.resize();
+                this.updateMapMarkers();
+                this.updateMapRoute(true);
+              }
+            } catch (e) { console.warn('Pembaruan peta setelah mengambil pesanan:', e); }
+          }, 250);
+          this.playOrderSound();
+          alert('🚀 Pesanan berhasil dikonfirmasi!');
+        } else {
+          this.takeOrderMessage = 'Pesanan tidak tersedia lagi. Memperbarui daftar...';
+          alert('⚠️ Pesanan sudah diambil driver lain atau tidak lagi tersedia. Daftar pesanan diperbarui.');
+          try {
+            const snap = await db.ref('orders').once('value');
+            const available = [];
+            snap.forEach(child => {
+              const o = child.val() || {};
+              if (!o.driver_id && ['pending', 'waiting_driver', 'mencari_driver', 'siap', 'diproses'].includes(String(o.status || '').toLowerCase().trim())) {
+                available.push({ ...o, id: child.key, _firebaseKey: child.key });
+              }
+            });
+            this.availableOrders = available.reverse();
+          } catch (err) { console.warn('Gagal menyegarkan daftar pesanan:', err); }
+        }
+      } catch (error) {
+        console.error('Gagal mengambil pesanan:', error);
+        const message = error && error.message ? error.message : 'Koneksi ke server terputus';
+        this.takeOrderMessage = 'Belum ada jawaban server. Memeriksa status pesanan...';
+        // Jika respons timeout tetapi server sempat menyimpan transaksi, jangan menyuruh driver
+        // mengambil pesanan lagi sebelum memeriksa pemilik pesanan saat ini.
+        try {
+          const check = await db.ref('orders/' + id).once('value');
+          const current = check.val() || {};
+          if (String(current.driver_id || '') === String(this.driverId)) {
+            this.myActiveOrder = { ...current, id, _firebaseKey: id };
+            this.availableOrders = this.availableOrders.filter(o => String(o.id) !== id);
+            this.initMap();
+            this.takeOrderMessage = 'Pesanan sudah masuk. Memuat peta...';
+            setTimeout(() => { try { if (this.map) { this.map.resize(); this.updateMapMarkers(); this.updateMapRoute(true); } } catch (_) {} }, 250);
+          } else {
+            this.takeOrderMessage = 'Koneksi lambat. Periksa internet lalu coba lagi.';
+            alert('❌ Konfirmasi belum berhasil: ' + message + '. Periksa internet. Jika tombol kembali tersedia, coba lagi setelah koneksi pulih.');
+          }
+        } catch (checkError) {
+          console.warn('Tidak dapat memastikan status pesanan:', checkError);
+          alert('❌ Koneksi belum stabil sehingga status pesanan belum dapat dipastikan. Periksa internet dan muat ulang daftar pesanan sebelum mencoba lagi.');
+        }
+      } finally {
+        if (this.takeOrderSlowTimer) clearTimeout(this.takeOrderSlowTimer);
+        this.takeOrderSlowTimer = null;
+        this.takingOrderId = '';
+        // Hapus pesan proses sesaat kemudian agar tombol kembali siap digunakan.
+        setTimeout(() => { if (!this.takingOrderId) this.takeOrderMessage = ''; }, 1800);
+      }
+    },
+
+    async updateMyOrderStatus(status) {
+      // Chat berjalan terpisah; kegagalan membersihkan chat tidak boleh menghentikan alur pesanan.
+      if (this.isUpdatingOrderStatus || !this.myActiveOrder) return;
+      const order = this.myActiveOrder;
+      const orderId = String(order._firebaseKey || order.id || '');
+      if (!orderId) {
+        alert('Pesanan tidak ditemukan. Muat ulang aplikasi lalu coba lagi.');
+        return;
+      }
+      const terminal = ['selesai', 'dibatalkan', 'dibatalkan_driver', 'cancelled', 'canceled'].includes(String(status).toLowerCase());
+
+      if (status === 'selesai') {
+        this.openActionConfirm('Selesaikan Pesanan', 'Konfirmasi pesanan telah selesai diantar?', async () => {
+          if (this.isUpdatingOrderStatus) return;
+          this.isUpdatingOrderStatus = true;
+          try {
+            // Proses keuangan dibuat idempoten terlebih dahulu agar saldo/komisi tidak ganda.
+            const hasilKeuangan = await this.prosesKeuanganPesananSelesai(orderId, order);
+            await this.simpanStatusPesanan(orderId, { status: 'selesai', selesai_pada: Date.now() });
+
+            this.tutupChatPelanggan();
+            this.hapusChatPesanan(orderId).catch(err => console.warn('Chat belum dapat dibersihkan:', err));
+
+            const infoSaldo = hasilKeuangan.saldoAkhir.toLocaleString('id-ID');
+            const infoKomisi = hasilKeuangan.commission.toLocaleString('id-ID');
+            if (hasilKeuangan.metode === 'Saldo') {
+              alert(`🎉 Pesanan Selesai!
+
+Pendapatan Anda: Rp ${hasilKeuangan.netDriver.toLocaleString('id-ID')}
+Komisi admin: Rp ${infoKomisi}
+Saldo dompet: Rp ${infoSaldo}`);
+            } else {
+              alert(`🎉 Pesanan Selesai!
+
+Pembayaran: COD/Tunai
+Komisi admin dipotong dari dompet: Rp ${infoKomisi}
+Pendapatan bersih: Rp ${hasilKeuangan.netDriver.toLocaleString('id-ID')}
+Saldo dompet: Rp ${infoSaldo}`);
+            }
+          } catch (err) {
+            console.error('Gagal menyelesaikan pesanan:', err);
+            alert((err && err.message) ? err.message : 'Pesanan belum berhasil diperbarui. Pastikan internet aktif lalu coba lagi.');
+          } finally {
+            this.isUpdatingOrderStatus = false;
+          }
+        });
+        return;
+      }
+
+      this.isUpdatingOrderStatus = true;
+      try {
+        await this.simpanStatusPesanan(orderId, { status: status });
+        if (terminal) {
+          this.tutupChatPelanggan();
+          this.hapusChatPesanan(orderId).catch(err => console.warn('Chat belum dapat dibersihkan:', err));
+        }
+        if (this.map) {
+          this.updateMapMarkers();
+          setTimeout(() => { if (this.map) this.updateMapRoute(true); }, 150);
+        }
+      } catch (err) {
+        console.error('Gagal memperbarui status pesanan:', err);
+        alert((err && err.message) ? err.message : 'Status pesanan gagal diperbarui. Pastikan internet aktif lalu coba lagi.');
+      } finally {
+        this.isUpdatingOrderStatus = false;
+      }
+    },
+
+    bukaChatPelanggan() {
+      if (!this.myActiveOrder) return;
+      const orderId = String(this.myActiveOrder._firebaseKey || this.myActiveOrder.id || '');
+      if (!orderId) return;
+      this.showCustomerChatModal = true;
+      this.unreadChatCount = 0;
+      // Hindari listener ganda jika tombol chat ditekan beberapa kali.
+      if (this.customerChatRef) this.customerChatRef.off();
+      this.customerChatHistory = [];
+      this.customerChatMessageIds = {};
+      this.customerChatOrderId = orderId;
+      // Ambil hanya 50 pesan terakhir. child_added datang berurutan dari Firebase.
+      this.customerChatRef = db.ref('order_chats/' + orderId).limitToLast(50);
+      this.customerChatRef.on('child_added', snap => {
+        if (!this.showCustomerChatModal || this.customerChatOrderId !== orderId || this.customerChatMessageIds[snap.key]) return;
+        this.customerChatMessageIds[snap.key] = true;
+        const raw = snap.val() || {};
+        this.customerChatHistory.push({
+          ...raw,
+          id: snap.key,
+          pesan: raw.pesan || raw.text || '',
+          tipe: raw.tipe || (raw.gambar ? 'gambar' : 'teks')
+        });
+        // Scroll hanya ketika pesan baru masuk; jangan memaksa scroll pada setiap render Alpine.
+        this.$nextTick(() => requestAnimationFrame(() => {
+          const box = this.$refs.customerChatMessages;
+          if (box && this.showCustomerChatModal) box.scrollTop = box.scrollHeight;
+        }));
+      }, err => console.warn('Gagal memuat chat pelanggan:', err));
+    },
+
+    tutupChatPelanggan() {
+      if (this.customerChatRef) {
+        this.customerChatRef.off();
+        this.customerChatRef = null;
+      }
+      this.customerChatOrderId = '';
+      this.showCustomerChatModal = false;
+    },
+
+    kirimPesanTemplate(teks) {
+      if (this.isSendingChat) return;
+      this.customerChatInputText = teks;
+      this.kirimPesanPelanggan();
+    },
+
+    async kirimPesanPelanggan() {
+      const text = String(this.customerChatInputText || '').trim();
+      if (!text || !this.myActiveOrder || this.isSendingChat) return;
+      const orderId = String(this.myActiveOrder._firebaseKey || this.myActiveOrder.id || '');
+      if (!orderId) return;
+      this.isSendingChat = true;
+      this.customerChatInputText = '';
+      try {
+        const chatRef = db.ref('order_chats/' + orderId).push();
+        await chatRef.set({
+          id: chatRef.key,
+          pengirim: 'driver',
+          nama: this.driverData?.nama || 'Driver',
+          pesan: text,
+          tipe: 'teks',
+          waktu: Date.now()
+        });
+      } catch (err) {
+        this.customerChatInputText = text;
+        alert('Pesan gagal dikirim. Periksa koneksi internet lalu coba lagi.');
+        console.error('Gagal mengirim pesan:', err);
+      } finally {
+        this.isSendingChat = false;
+      }
+    },
+
+    async kirimFotoChat(event) {
+      const input = event?.target;
+      const file = input?.files?.[0];
+      if (!file || !this.myActiveOrder || this.isUploadingImage) return;
+      if (!file.type || !file.type.startsWith('image/')) {
+        alert('Pilih file gambar yang valid.');
+        input.value = '';
+        return;
+      }
+      this.isUploadingImage = true;
+      try {
+        // Kompres di perangkat sebelum masuk Firebase RTDB; batasi dimensi dan ukuran data.
+        const imageUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('File foto tidak dapat dibaca.'));
+          reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('Format foto tidak didukung.'));
+            img.onload = () => {
+              let width = img.naturalWidth || img.width;
+              let height = img.naturalHeight || img.height;
+              const maxSide = 960;
+              const scale = Math.min(1, maxSide / Math.max(width, height));
+              width = Math.max(1, Math.round(width * scale));
+              height = Math.max(1, Math.round(height * scale));
+              const canvas = document.createElement('canvas');
+              canvas.width = width; canvas.height = height;
+              const ctx = canvas.getContext('2d', { alpha: false });
+              if (!ctx) return reject(new Error('Kompresi foto tidak tersedia.'));
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0, width, height);
+              let quality = 0.68;
+              let result = canvas.toDataURL('image/jpeg', quality);
+              // Turunkan kualitas bertahap jika payload masih besar (Base64).
+              while (result.length > 180000 && quality > 0.35) {
+                quality = Math.max(0.35, quality - 0.08);
+                result = canvas.toDataURL('image/jpeg', quality);
+              }
+              if (result.length > 260000) {
+                const smaller = document.createElement('canvas');
+                const ratio = Math.sqrt(180000 / result.length);
+                smaller.width = Math.max(1, Math.round(width * ratio));
+                smaller.height = Math.max(1, Math.round(height * ratio));
+                const smallCtx = smaller.getContext('2d', { alpha: false });
+                if (smallCtx) {
+                  smallCtx.fillStyle = '#fff';
+                  smallCtx.fillRect(0, 0, smaller.width, smaller.height);
+                  smallCtx.drawImage(canvas, 0, 0, smaller.width, smaller.height);
+                  result = smaller.toDataURL('image/jpeg', 0.45);
+                }
+              }
+              canvas.width = canvas.height = 1;
+              resolve(result);
+            };
+            img.src = reader.result;
+          };
+          reader.readAsDataURL(file);
+        });
+        if (!this.myActiveOrder) throw new Error('Pesanan sudah tidak aktif.');
+        const orderId = String(this.myActiveOrder._firebaseKey || this.myActiveOrder.id);
+        const chatRef = db.ref('order_chats/' + orderId).push();
+        await chatRef.set({
+          id: chatRef.key, pengirim: 'driver', nama: this.driverData?.nama || 'Driver',
+          gambar: imageUrl, tipe: 'gambar', waktu: Date.now()
+        });
+      } catch (err) {
+        console.error('Gagal mengirim foto chat:', err);
+        alert(err?.message || 'Foto gagal dikirim. Periksa koneksi internet lalu coba lagi.');
+      } finally {
+        this.isUploadingImage = false;
+        if (input) input.value = '';
+      }
+    },
+
+    hapusChatPesanan(orderId) {
+      const id = String(orderId || '').trim();
+      if (!id) return Promise.resolve(false);
+      if (this.chatCleanupDone[id]) return Promise.resolve(true);
+      if (this.chatCleanupInFlight[id]) return this.chatCleanupInFlight[id];
+
+      // Tulisan dan foto disimpan di node order_chats/<id> (foto berupa Base64),
+      // jadi menghapus node ini menghapus seluruh riwayat chat dan payload fotonya.
+      const task = db.ref('order_chats/' + id).remove().then(() => {
+        this.chatCleanupDone[id] = true;
+        delete this.chatCleanupInFlight[id];
+        if (this.customerChatOrderId === id) {
+          this.customerChatHistory = [];
+          this.customerChatMessageIds = {};
+          this.tutupChatPelanggan();
+        }
+        return true;
+      }).catch(err => {
+        delete this.chatCleanupInFlight[id];
+        console.error('Gagal menghapus riwayat chat pesanan ' + id + ':', err);
+        throw err;
+      });
+      this.chatCleanupInFlight[id] = task;
+      return task;
+    },
+
+    deletingBalanceHistory: false,
+
+    async hapusRiwayatSaldoPermanen() {
+      if (!this.driverId || this.deletingBalanceHistory) return;
+      const ok = confirm('Hapus permanen seluruh riwayat saldo akun ini, termasuk riwayat transaksi, top up, dan penarikan? Data riwayat yang dihapus tidak dapat dipulihkan. Saldo saat ini tidak akan diubah.');
+      if (!ok) return;
+      this.deletingBalanceHistory = true;
+      try {
+        const driverKey = String(this.driverId);
+        const updates = {};
+
+        // Hapus ledger transaksi driver, tanpa mengubah nilai saldo driver.
+        updates['driver_transactions/' + driverKey] = null;
+
+        // Riwayat ditampilkan dari beberapa node terpisah. Hapus data yang
+        // terhubung melalui driver_id ATAU user_id agar tidak muncul kembali.
+        const [topupSnap, withdrawSnap] = await Promise.all([
+          db.ref('topups').once('value'),
+          db.ref('withdrawals').once('value')
+        ]);
+        const belongsToDriver = row => row && (
+          String(row.driver_id ?? '') === driverKey ||
+          String(row.user_id ?? '') === driverKey
+        );
+        Object.entries(topupSnap.val() || {}).forEach(([key, row]) => {
+          if (belongsToDriver(row)) updates['topups/' + key] = null;
+        });
+        Object.entries(withdrawSnap.val() || {}).forEach(([key, row]) => {
+          if (belongsToDriver(row)) updates['withdrawals/' + key] = null;
+        });
+
+        // Satu update multi-path agar seluruh node riwayat dihapus bersamaan.
+        await db.ref().update(updates);
+
+        this.driverTransactions = [];
+        this.topupHistory = [];
+        this.lastTopupStatus = null;
+        this.lastWithdrawStatus = null;
+        alert('Berhasil menghapus riwayat transaksi, top up, dan penarikan akun ini dari database. Saldo saat ini tetap tidak berubah. Transaksi baru akan tercatat seperti biasa.');
+      } catch (err) {
+        console.error('Gagal menghapus riwayat saldo:', err);
+        alert('Riwayat belum berhasil dihapus seluruhnya. Periksa koneksi dan izin Firebase, lalu coba lagi.');
+      } finally {
+        this.deletingBalanceHistory = false;
+      }
+    },
+
+    async hapusRiwayatPesananPermanen() {
+      if (!this.driverId || this.deletingOrderHistory) return;
+      if (!this.completedOrders.length) return alert('Tidak ada riwayat pesanan yang perlu dihapus.');
+      const ok = confirm('Hapus permanen riwayat pesanan selesai dari tampilan akun driver ini? Data pesanan utama di aplikasi pelanggan dan admin tetap aman.');
+      if (!ok) return;
+      this.deletingOrderHistory = true;
+      try {
+        const updates = {};
+        const now = Date.now();
+        this.completedOrders.forEach(order => {
+          const id = String(order._firebaseKey || order.id || '');
+          if (id) updates['driver_hidden_order_history/' + this.driverId + '/' + id] = { hidden: true, deleted_at: now };
+        });
+        if (Object.keys(updates).length) await db.ref().update(updates);
+        this.completedOrders = [];
+        alert('Riwayat pesanan selesai sudah dihapus dari akun driver ini. Data pesanan pelanggan dan admin tidak dihapus.');
+      } catch (err) {
+        console.error('Gagal menghapus riwayat pesanan driver:', err);
+        alert('Riwayat pesanan belum berhasil dihapus. Periksa koneksi dan izin Firebase.');
+      } finally {
+        this.deletingOrderHistory = false;
+      }
+    },
+
+    getDriverTransactionHistory() {
+      const rows = [...(this.driverTransactions || [])];
+      const knownIds = new Set(rows.map(row => String(row.id || '')));
+      (this.topupHistory || []).forEach(topup => {
+        const id = String(topup.id || '');
+        if (knownIds.has(id)) return;
+        rows.push({
+          ...topup,
+          id,
+          jenis: 'topup_' + String(topup.status || 'pending').toLowerCase(),
+          nominal: Number(topup.nominal_topup ?? topup.nominal ?? 0),
+          saldo_delta: String(topup.status || '').toLowerCase() === 'approved' ? Number(topup.nominal_topup ?? topup.nominal ?? 0) : 0,
+          keterangan: String(topup.status || '').toLowerCase() === 'approved' ? 'Top up saldo disetujui admin' : 'Permintaan top up menunggu verifikasi admin'
+        });
+      });
+      return rows.sort((a,b) => Number(b.timestamp || b.created_at || 0) - Number(a.timestamp || a.created_at || 0)).slice(0, 100);
+    },
+
+    getTransactionTitle(item) {
+      const type = String(item?.jenis || '').toLowerCase();
+      if (type === 'pendapatan_order') return 'Pendapatan Pesanan';
+      if (type === 'potongan_komisi_cod') return 'Komisi COD';
+      if (type === 'withdraw_pending') return 'Penarikan Saldo';
+      if (type.startsWith('topup_')) return type === 'topup_approved' ? 'Top Up Saldo' : 'Permintaan Top Up';
+      return String(item?.jenis || 'Transaksi Saldo').replaceAll('_', ' ');
+    },
+
+    getTransactionDelta(item) {
+      const type = String(item?.jenis || '').toLowerCase();
+      if (type.startsWith('topup_') && type !== 'topup_approved') return 0;
+      if (item?.saldo_delta !== undefined && item?.saldo_delta !== null) return Number(item.saldo_delta || 0);
+      if (type === 'pendapatan_order') return Number(item?.nominal || item?.pendapatan_driver || 0);
+      if (type === 'potongan_komisi_cod' || type === 'withdraw_pending') return -Math.abs(Number(item?.nominal || 0));
+      return 0;
+    },
+
+    formatTransactionDate(item) {
+      const stamp = Number(item?.timestamp || item?.created_at || 0);
+      return stamp ? new Date(stamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Waktu tidak tersedia';
+    },
+
+    dengarkanStatusTransaksiDriver() {
+      if (!this.driverId) return;
+      // Riwayat mutasi saldo driver: pendapatan order, komisi COD, dan penarikan.
+      db.ref('driver_transactions/' + this.driverId).limitToLast(100).on('value', snap => {
+        const rows = snap.val() || {};
+        this.driverTransactions = Object.entries(rows).map(([id, row]) => ({ ...row, id: row?.id || id }))
+          .sort((a,b) => Number(b.timestamp || b.created_at || 0) - Number(a.timestamp || a.created_at || 0));
+      });
+      // Permintaan top up juga ditampilkan, termasuk status menunggu/diterima admin.
+      db.ref('topups').orderByChild('driver_id').equalTo(this.driverId).limitToLast(50).on('value', snap => {
+        const rows = snap.val() || {};
+        this.topupHistory = Object.entries(rows).map(([id, row]) => ({ ...row, id: row?.id || id }))
+          .sort((a,b) => Number(b.timestamp || b.created_at || 0) - Number(a.timestamp || a.created_at || 0));
+        const latest = this.topupHistory[0];
+        if (latest && latest.status === 'approved') this.lastTopupStatus = latest;
+      });
+      db.ref('withdrawals').orderByChild('driver_id').equalTo(this.driverId).limitToLast(10).on('value', snap => {
+        const rows = snap.val() || {};
+        const latest = Object.values(rows).sort((a,b) => Number(b.timestamp||0) - Number(a.timestamp||0))[0];
+        if (latest) this.lastWithdrawStatus = latest;
+      });
+    },
+
+    bukaModalTopup() {
+      this.topupStep = 1;
+      this.topupNominalBase = 50000;
+      this.topupUniqueCode = Math.floor(100 + Math.random() * 899);
+      this.topupTotalTransfer = this.topupNominalBase + this.topupUniqueCode;
+      this.showTopupModal = true;
+    },
+
+    pilihNominalTopup(nominal) {
+      this.topupNominalBase = Number(nominal);
+      this.topupTotalTransfer = this.topupNominalBase + this.topupUniqueCode;
+    },
+
+    lanjutTopupTransfer() {
+      if (this.topupNominalBase < 10000) return alert('Minimum top up adalah Rp 10.000');
+      this.topupTotalTransfer = Number(this.topupNominalBase) + this.topupUniqueCode;
+      this.topupStep = 2;
+    },
+
+    async salinKeClipboard(teks, pesanAlert) {
+      if (!teks || teks === 'Belum diisi Admin') return alert('⚠️ Data rekening belum diisi Admin');
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(String(teks));
+        } else {
+          const temp = document.createElement('textarea');
+          temp.value = String(teks);
+          temp.setAttribute('readonly', '');
+          temp.style.position = 'fixed';
+          temp.style.opacity = '0';
+          document.body.appendChild(temp);
+          temp.select();
+          const ok = document.execCommand('copy');
+          temp.remove();
+          if (!ok) throw new Error('Salin otomatis tidak didukung perangkat ini.');
+        }
+        alert(pesanAlert || 'Berhasil disalin!');
+      } catch (err) {
+        console.warn('Clipboard tidak tersedia:', err);
+        alert('Tidak bisa menyalin otomatis. Tekan lama teks lalu pilih Salin.');
+      }
+    },
+
+    async konfirmasiTopupWA() {
+      const nominal = Number(this.topupNominalBase || 0);
+      const totalTransfer = Number(this.topupTotalTransfer || 0);
+      const kodeUnik = Number(this.topupUniqueCode || 0);
+      if (!nominal || nominal < 10000) return alert('⚠️ Minimum top up adalah Rp 10.000');
+      if (!totalTransfer) return alert('⚠️ Nominal transfer belum tersedia.');
+
+      const requestId = 'TOPUP_DRV_' + this.driverId + '_' + Date.now();
+      const now = Date.now();
+      const data = {
+        id: requestId,
+        user_type: 'driver',
+        driver_id: this.driverId,
+        user_id: this.driverId,
+        user_nama: this.driverData?.nama || '-',
+        user_hp: this.driverData?.no_hp || this.driverData?.hp || '-',
+        nominal: nominal,
+        nominal_topup: nominal,
+        kode_unik: kodeUnik,
+        total_transfer: totalTransfer,
+        metode: 'Transfer Bank',
+        status: 'pending',
+        timestamp: now,
+        created_at: now
+      };
+
+      try {
+        await db.ref('topups/' + requestId).set(data);
+        this.topupRequestId = requestId;
+
+        const msg = `Halo Admin SiapJek, saya sudah melakukan transfer Top Up Saldo Driver:
+
+• *ID Top Up*: ${requestId}
+• *ID Driver*: ${this.driverId}
+• *Nama*: ${this.driverData?.nama || '-'}
+• *Nominal Saldo*: Rp ${nominal.toLocaleString('id-ID')}
+• *Kode Unik*: ${kodeUnik}
+• *TOTAL TRANSFER*: Rp ${totalTransfer.toLocaleString('id-ID')}
+• *Transfer Ke*: ${this.adminConfig.rekening_admin.bank} (${this.adminConfig.rekening_admin.nomor})
+• *Atas Nama*: ${this.adminConfig.rekening_admin.atas_nama}
+
+Mohon verifikasi di Panel Admin dan tambahkan saldo setelah transfer diterima. Terima kasih!`;
+
+        const wa = String(this.adminConfig.admin_wa || '').replace(/[^0-9]/g, '');
+        if (wa) window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');
+        this.showTopupModal = false;
+        alert(`✅ Permintaan top up ${requestId} sudah masuk ke Panel Admin. Setelah transfer, konfirmasi juga melalui WhatsApp.`);
+      } catch (err) {
+        console.error('Gagal membuat permintaan top up:', err);
+        alert('❌ Permintaan top up gagal dibuat. Periksa koneksi internet.');
+      }
+    },
+
+    bukaModalWithdraw() {
+      this.withdrawNominal = '';
+      this.withdrawRekening = '';
+      this.withdrawAtasNama = this.driverData?.nama || '';
+      this.showWithdrawModal = true;
+    },
+
+    async kirimPengajuanWithdraw() {
+      const nominal = Number(this.withdrawNominal);
+      if (!Number.isFinite(nominal) || !Number.isSafeInteger(nominal) || nominal < 10000) {
+        return alert('⚠️ Minimum penarikan adalah Rp 10.000. Masukkan nominal bulat yang valid.');
+      }
+      if (!String(this.withdrawRekening || '').trim()) return alert('⚠️ Masukkan nomor rekening tujuan!');
+      if (!this.driverId || !this.driverData) return alert('❌ Data driver belum siap. Silakan muat ulang aplikasi.');
+
+      const requestId = 'WD_DRV_' + this.driverId + '_' + Date.now();
+      const now = Date.now();
+      const saldoRef = db.ref('drivers/' + this.driverId + '/saldo');
+      let saldoSudahDikurangi = false;
+
+      const data = {
+        id: requestId,
+        user_type: 'driver',
+        driver_id: this.driverId,
+        user_id: this.driverId,
+        user_nama: this.driverData?.nama || '-',
+        user_hp: this.driverData?.no_hp || this.driverData?.hp || '-',
+        nominal: nominal,
+        info_rekening: `${this.withdrawBank} - ${String(this.withdrawRekening).trim()}`,
+        bank: this.withdrawBank,
+        no_rekening: String(this.withdrawRekening).trim(),
+        atas_nama: String(this.withdrawAtasNama || this.driverData?.nama || '-').trim(),
+        status: 'pending',
+        saldo_ditahan: true,
+        timestamp: now,
+        created_at: now
+      };
+
+      try {
+        // Tangani error transaksi di dalam try/catch agar kegagalan Firebase
+        // tidak menghentikan fungsi tanpa pesan yang jelas.
+        const tx = await saldoRef.transaction(current => {
+          const saldo = Number(current || 0);
+          if (!Number.isFinite(saldo) || saldo < nominal) return;
+          // Tidak ada saldo mengendap: saldo yang tersedia boleh ditarik seluruhnya.
+          return saldo - nominal;
+        });
+
+        if (!tx.committed) {
+          return alert('❌ Penarikan tidak dapat diproses. Saldo mungkin sudah berubah atau tidak mencukupi.');
+        }
+        saldoSudahDikurangi = true;
+
+        // Simpan pengajuan dan riwayat dalam satu multi-location update Firebase.
+        // Dengan begitu keduanya tersimpan bersama-sama atau tidak tersimpan sama sekali.
+        const updates = {};
+        updates['withdrawals/' + requestId] = data;
+        updates['driver_transactions/' + this.driverId + '/' + requestId] = {
+          id: requestId,
+          jenis: 'withdraw_pending',
+          nominal: nominal,
+          saldo_delta: -nominal,
+          status: 'pending',
+          timestamp: now,
+          keterangan: 'Saldo ditahan untuk pengajuan penarikan'
+        };
+        await db.ref().update(updates);
+
+        this.withdrawRequestId = requestId;
+        const msg = `Halo Admin SiapJek, saya mengajukan Penarikan Saldo Driver:\n\n• *ID Withdraw*: ${requestId}\n• *ID Driver*: ${this.driverId}\n• *Nama*: ${this.driverData?.nama || '-'}\n• *Nominal*: Rp ${nominal.toLocaleString('id-ID')}\n• *Bank Tujuan*: ${this.withdrawBank}\n• *No. Rekening*: ${String(this.withdrawRekening).trim()}\n• *Atas Nama*: ${this.withdrawAtasNama || this.driverData?.nama || '-'}\n\nPermintaan sudah masuk ke Panel Admin. Mohon diproses. Terima kasih!`;
+        const wa = String(this.adminConfig.admin_wa || '').replace(/[^0-9]/g, '');
+        if (wa) window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');
+        this.showWithdrawModal = false;
+        alert(`✅ Pengajuan penarikan ${requestId} berhasil masuk ke Panel Admin. Saldo ditahan sampai diproses admin.`);
+      } catch (err) {
+        console.error('Gagal membuat pengajuan withdraw:', err);
+
+        if (saldoSudahDikurangi) {
+          // Error jaringan bisa terjadi sesudah server menerima update. Periksa dahulu
+          // supaya saldo tidak dikembalikan sementara pengajuan pending sudah tercatat.
+          let statusPengajuanDapatDipastikan = false;
+          try {
+            const requestSnap = await db.ref('withdrawals/' + requestId).once('value');
+            const historySnap = await db.ref('driver_transactions/' + this.driverId + '/' + requestId).once('value');
+            statusPengajuanDapatDipastikan = true;
+            if (requestSnap.exists() && historySnap.exists()) {
+              this.withdrawRequestId = requestId;
+              this.showWithdrawModal = false;
+              alert(`✅ Pengajuan ${requestId} sudah tercatat. Saldo ditahan sampai diproses admin.`);
+              return;
+            }
+          } catch (verifyErr) {
+            console.error('Tidak dapat memastikan status pengajuan withdraw:', verifyErr);
+          }
+
+          if (!statusPengajuanDapatDipastikan) {
+            alert('⚠️ Status pengajuan belum dapat dipastikan karena koneksi Firebase. Jangan ajukan ulang dulu; periksa Panel Admin atau hubungi Admin SiapJek agar saldo dan pengajuan diperiksa.');
+            return;
+          }
+
+          try {
+            // Status sudah dipastikan: kedua rekod tidak tersimpan, jadi saldo aman dikembalikan.
+            const refund = await saldoRef.transaction(current => Number(current || 0) + nominal);
+            if (!refund.committed) throw new Error('Transaksi pengembalian saldo tidak berhasil');
+            alert('❌ Pengajuan penarikan gagal disimpan. Saldo telah dikembalikan. Silakan coba lagi.');
+          } catch (refundErr) {
+            console.error('PENTING: saldo gagal dikembalikan otomatis:', refundErr);
+            alert('⚠️ Pengajuan penarikan gagal disimpan dan pengembalian saldo otomatis juga gagal. Jangan ajukan ulang dulu; hubungi Admin SiapJek untuk pemeriksaan saldo.');
+          }
+        } else {
+          alert('❌ Penarikan gagal diproses. Periksa koneksi internet dan coba lagi.');
+        }
+      }
+    }
+  }" x-init="initDriverSession()" class="app-container">
+
+    <!-- LAYAR KUNCI PEMELIHARAAN: mengikuti settings/maintenance_mode dari Panel Admin -->
+    <div x-show="maintenanceActive" x-cloak
+         class="fixed inset-0 z-[9999] flex items-center justify-center p-6"
+         style="background:rgba(7,18,38,.97); padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);"
+         role="alertdialog" aria-modal="true" aria-labelledby="maintenance-title">
+      <div class="w-full max-w-sm rounded-3xl bg-white p-7 text-center shadow-2xl">
+        <div class="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-orange-100 text-orange-600">
+          <i class="fa-solid fa-screwdriver-wrench text-4xl"></i>
+        </div>
+        <p class="mb-2 text-xs font-black uppercase tracking-[.2em] text-orange-600">SIAPJEK DRIVER</p>
+        <h2 id="maintenance-title" class="mb-3 text-xl font-black text-slate-900">Sistem Sedang Dipelihara</h2>
+        <p class="whitespace-pre-line text-sm leading-relaxed text-slate-600"
+           x-text="maintenanceMessage || 'Aplikasi sedang dalam pemeliharaan sistem. Mohon kembali beberapa saat lagi.'"></p>
+        <div class="mt-6 flex items-center justify-center gap-2 text-xs font-bold text-slate-400">
+          <i class="fa-solid fa-circle-notch fa-spin"></i>
+          <span>Silakan coba kembali nanti</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTIFIKASI MELAYANG PESANAN / CHAT -->
+    <div x-show="isLoggedIn && notificationToast" x-cloak
+         class="fixed top-3 left-3 right-3 z-[120] mx-auto max-w-[450px]"
+         style="padding-top:env(safe-area-inset-top)"
+         @click="openNotificationTarget()">
+      <div class="rounded-2xl p-4 shadow-2xl border flex items-start gap-3 text-white"
+           :class="notificationToast?.type === 'chat' ? 'bg-slate-900 border-sky-400' : 'bg-orange-600 border-orange-300'">
+        <div class="w-11 h-11 shrink-0 rounded-xl bg-white/20 flex items-center justify-center text-xl">
+          <i :class="notificationToast?.type === 'chat' ? 'fas fa-comment-dots' : 'fas fa-motorcycle'"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-black text-sm" x-text="notificationToast?.title"></div>
+          <div class="text-xs mt-1 leading-relaxed break-words" x-text="notificationToast?.message"></div>
+          <div class="text-[10px] mt-2 font-bold opacity-90">Ketuk untuk membuka</div>
+        </div>
+        <button type="button" aria-label="Tutup notifikasi" class="text-white/80 text-lg px-1"
+                @click.stop="dismissDriverNotification()">×</button>
+      </div>
+    </div>
+
+    <!-- LOGIN SCREEN -->
+    <div x-show="!isLoggedIn" class="p-5 space-y-5 flex-1 flex flex-col justify-center bg-white z-50 overflow-y-auto">
+      <div class="text-center space-y-3">
+        <div class="w-20 h-20 bg-gradient-to-br from-emerald-400 to-emerald-600 text-white rounded-3xl mx-auto flex items-center justify-center text-4xl shadow-lg">🛵</div>
+        <h1 class="text-2xl font-black text-slate-800">SiapJek Driver</h1>
+        <p class="text-sm text-slate-500">Masuk dengan akun yang sudah terdaftar.</p>
+      </div>
+      <div class="glass-panel p-5 rounded-3xl bg-slate-50 space-y-4">
+        <div class="flex items-center gap-2 text-emerald-700 text-xs font-black bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5">
+          <i class="fas fa-shield-alt"></i>
+          <span>Login resmi menggunakan email dan kata sandi</span>
+        </div>
+        <div class="space-y-3">
+          <label class="block text-xs font-bold text-slate-600">Email terdaftar</label>
+          <input type="email" x-model="inputEmail" autocomplete="username" @keyup.enter="loginWithEmail()" placeholder="nama@email.com" class="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
+          <label class="block text-xs font-bold text-slate-600">Kata sandi</label>
+          <input type="password" x-model="inputPassword" autocomplete="current-password" @keyup.enter="loginWithEmail()" placeholder="Masukkan kata sandi" class="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
+          <button type="button" @click="kirimResetPassword()" :disabled="isAuthActionBusy" class="text-xs font-bold text-emerald-700 py-1"><i class="fas fa-key mr-1"></i> Lupa kata sandi?</button>
+          <button type="button" @click="loginWithEmail()" :disabled="isLoggingIn" class="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-black py-3.5 rounded-xl shadow-md"><span x-show="!isLoggingIn">Masuk <i class="fas fa-arrow-right ml-1"></i></span><span x-show="isLoggingIn" x-cloak><i class="fas fa-circle-notch fa-spin mr-2"></i>Memverifikasi...</span></button>
+        </div>
+        <p x-show="loginMessage" x-text="loginMessage" class="text-xs font-semibold text-center leading-relaxed" :class="loginMessage.includes('dikirim') || loginMessage.includes('Periksa Inbox') ? 'text-emerald-700' : 'text-amber-700'" x-cloak></p>
+        <p class="text-[10px] leading-relaxed text-slate-400 text-center">Akun email dan kata sandi dibuat oleh Admin melalui Firebase Authentication. Jangan bagikan kata sandi kepada siapa pun.</p>
+      </div>
+    </div>
+
+    <!-- MAIN APP WRAPPER -->
+    <div x-show="isLoggedIn" class="relative w-full h-full overflow-hidden flex-1 flex flex-col">
+
+      <!-- TAB 1: BERANDA / PETA UTAMA -->
+      <div x-show="activeTab === 'orders'" class="relative w-full h-full flex-1">
+        
+        <!-- PETA FULL LAYAR -->
+        <div id="map-wrapper">
+          <div id="map"></div>
+
+          <!-- BADGE STATUS DRIVER -->
+          <div x-show="!myActiveOrder"
+               class="absolute left-4 top-4 z-10 bg-white/95 backdrop-blur-md rounded-full px-4 py-2 shadow-lg border border-slate-200/80 text-xs font-black text-slate-700 flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" :class="gpsStatus === 'Sinyal Bagus' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'"></span>
+            <span x-text="driverData?.is_online ? 'Siap Menerima Order (' + gpsStatus + ')' : 'Offline'"></span>
+          </div>
+
+          <!-- BADGE NAVIGASI PESANAN -->
+          <div x-show="myActiveOrder"
+               class="absolute left-4 top-4 z-10 bg-white/95 backdrop-blur-md rounded-2xl px-4 py-2.5 shadow-lg border border-slate-200/80 text-xs font-black text-slate-800">
+            <span x-text="['mengantar','diantar','sampai_lokasi'].includes(String(myActiveOrder?.status || '').toLowerCase()) ? '🚚 Menuju Lokasi Tujuan' : '📍 Menuju Titik Jemput'"></span>
+          </div>
+
+          <!-- ESTIMASI RUTE MAPS -->
+          <div x-show="myActiveOrder"
+               class="absolute left-4 bottom-28 z-10 route-info-badge px-4 py-2.5 shadow-xl flex items-center gap-3 text-xs font-black border border-white/20">
+            <span><i class="fa-regular fa-clock mr-1 text-sky-400"></i><span x-text="routeEtaText"></span></span>
+            <span class="opacity-40">•</span>
+            <span><i class="fa-solid fa-route mr-1 text-orange-400"></i><span x-text="routeDistanceText"></span></span>
+          </div>
+
+          <!-- TOMBOL FLOATING NAVIGASI EKSTERNAL CEPAT -->
+          <div x-show="myActiveOrder" class="absolute right-4 top-4 z-10 flex flex-col gap-2">
+            <button @click="openExternalNavigation('google')" class="w-10 h-10 rounded-2xl bg-blue-600 text-white shadow-lg border border-white/30 flex items-center justify-center active:scale-95 transition">
+              <i class="fa-solid fa-diamond-turn-right text-sm"></i>
+            </button>
+            <button @click="openExternalNavigation('waze')" class="w-10 h-10 rounded-2xl bg-sky-500 text-white shadow-lg border border-white/30 flex items-center justify-center active:scale-95 transition" aria-label="Buka Waze">
+              <i class="fa-brands fa-waze text-sm"></i>
+            </button>
+            <!-- TOMBOL CHAT PELANGGAN DI ATAS PETA + BADGE PESAN BELUM DIBACA -->
+            <button @click="bukaChatPelanggan()"
+                    class="relative w-10 h-10 rounded-2xl bg-emerald-600 text-white shadow-lg border border-white/30 flex items-center justify-center active:scale-95 transition"
+                    aria-label="Buka chat pelanggan"
+                    title="Chat pelanggan">
+              <i class="fa-solid fa-comment-dots text-base"></i>
+              <span x-show="unreadChatCount > 0" x-cloak
+                    x-text="unreadChatCount > 99 ? '99+' : unreadChatCount"
+                    class="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-red-600 text-white border-2 border-white text-[10px] font-black flex items-center justify-center shadow-md"></span>
+            </button>
+          </div>
+
+          <!-- CONTROLLER PETA: STYLE PICKER, 2D/3D, & RE-CENTER -->
+          <div class="absolute right-4 bottom-28 z-10 flex flex-col gap-2.5">
+            
+            <!-- TOMBOL PILIH STYLE PETA -->
+            <div class="relative">
+              <button type="button" @click="showStylePicker = !showStylePicker"
+                class="w-11 h-11 rounded-full bg-white text-slate-800 shadow-xl border border-slate-200 flex items-center justify-center font-black text-xs hover:bg-slate-50 transition active:scale-95">
+                <i class="fa-solid fa-layer-group text-sm text-emerald-600"></i>
+              </button>
+
+              <!-- DROPDOWN STYLE PETA -->
+              <div x-show="showStylePicker" x-cloak @click.outside="showStylePicker = false"
+                class="absolute right-14 bottom-0 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 w-48 space-y-1 z-20">
+                <p class="text-[10px] font-black text-slate-400 uppercase px-2 py-1">Tampilan Peta</p>
+                <template x-for="st in mapStyles" :key="st.id">
+                  <button @click="changeMapStyle(st.id)"
+                    :class="currentMapStyle === st.id ? 'bg-emerald-50 text-emerald-700 font-black' : 'text-slate-700 font-bold hover:bg-slate-50'"
+                    class="w-full text-left px-2.5 py-2 rounded-xl text-xs flex items-center gap-2 transition">
+                    <i class="fa-solid" :class="st.icon"></i>
+                    <span x-text="st.name"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <!-- TOMBOL PERSPECTIVE 2D / 3D NAVIGASI -->
+            <button type="button" @click="toggle3DMapMode()"
+              class="w-11 h-11 rounded-full bg-white text-slate-800 shadow-xl border border-slate-200 flex items-center justify-center font-black text-xs hover:bg-slate-50 transition active:scale-95">
+              <span x-text="map3DMode ? '2D' : '3D'"></span>
+            </button>
+
+            <!-- TOMBOL PUSATKAN POSISI DRIVER -->
+            <button type="button" @click="focusMapOnDriver()"
+              aria-label="Pusatkan peta ke posisi driver"
+              class="w-11 h-11 rounded-full bg-white text-slate-800 shadow-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition active:scale-95">
+              <i class="fa-solid fa-location-crosshairs text-lg"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- BOTTOM SHEET DETAIL PESANAN -->
+        <div class="bottom-sheet glass-panel" :class="sheetCollapsed ? 'collapsed' : ''">
+          
+          <div @touchstart.passive="sheetTouchStart($event.touches[0].clientY, $event.touches[0].clientX)"
+               @touchend.passive="sheetTouchEnd($event.changedTouches[0].clientY, $event.changedTouches[0].clientX)"
+               @click="toggleSheet()" 
+               class="w-full py-3.5 px-4 flex items-center justify-between cursor-pointer select-none border-b border-slate-100 bg-white/90">
+            
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full" :class="myActiveOrder ? 'bg-orange-500' : 'bg-emerald-500'"></span>
+              <span class="text-xs font-black text-slate-800" x-text="myActiveOrder ? 'Detail Orderan Aktif' : (availableOrders.length > 0 ? availableOrders.length + ' Orderan Baru' : 'Info Driver')"></span>
+            </div>
+
+            <div class="flex items-center gap-1.5 bg-slate-100 px-3 py-1 rounded-full text-[10px] font-black text-slate-600">
+              <span x-text="sheetCollapsed ? 'BUKA DETAIL' : 'TUTUP DETAIL'"></span>
+              <i class="fa-solid" :class="sheetCollapsed ? 'fa-chevron-up text-emerald-600' : 'fa-chevron-down text-slate-400'"></i>
+            </div>
+          </div>
+
+          <!-- KONTEN BOTTOM SHEET -->
+          <div class="p-4 space-y-4 overflow-y-auto no-scrollbar pb-16 max-h-[65dvh]">
+            
+            <template x-if="myActiveOrder">
+              <div class="space-y-4">
+                <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <h4 class="text-sm font-black text-slate-800">Orderan Aktif</h4>
+                  <button @click="openActionConfirm('Batalkan Pesanan', 'Yakin ingin membatalkan pesanan?', () => updateMyOrderStatus('dibatalkan'))" class="px-3 py-1 rounded-xl border border-red-300 text-red-500 text-xs font-bold hover:bg-red-50">Batalkan</button>
+                </div>
+
+                <div class="flex items-center justify-between gap-3 rounded-2xl border px-3.5 py-3"
+                     :class="getOrderPaymentMethod(myActiveOrder) === 'Saldo' ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center"
+                          :class="getOrderPaymentMethod(myActiveOrder) === 'Saldo' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'">
+                      <i class="fas" :class="getOrderPaymentMethod(myActiveOrder) === 'Saldo' ? 'fa-wallet' : 'fa-money-bill-wave'"></i>
+                    </span>
+                    <div class="min-w-0">
+                      <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Metode Pembayaran</p>
+                      <p class="text-sm font-black" :class="getOrderPaymentMethod(myActiveOrder) === 'Saldo' ? 'text-emerald-700' : 'text-orange-700'" x-text="getOrderPaymentMethod(myActiveOrder) === 'Saldo' ? 'Saldo SiapJek' : 'Tunai (COD)'"></p>
+                    </div>
+                  </div>
+                  <span class="text-[10px] font-bold text-right" :class="getOrderPaymentMethod(myActiveOrder) === 'Saldo' ? 'text-emerald-700' : 'text-orange-700'" x-text="getOrderPaymentMethod(myActiveOrder) === 'Saldo' ? 'Sudah dibayar' : 'Tagih pelanggan'"></span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs">
+                  <div>
+                    <p class="text-[10px] text-slate-500 font-bold uppercase">Total Tagihan</p>
+                    <p class="text-base font-black text-slate-800 mt-0.5" x-text="'Rp ' + (Number(myActiveOrder.harga_total) || 0).toLocaleString('id-ID')"></p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] text-slate-500 font-bold uppercase">Pendapatan Bersih</p>
+                    <p class="text-base font-black text-emerald-600 mt-0.5" x-text="'Rp ' + getOrderNetFare(myActiveOrder).toLocaleString('id-ID')"></p>
+                  </div>
+                </div>
+
+                <div class="text-xs space-y-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                  <p class="text-[10px] font-bold text-sky-600 uppercase"><i class="fas fa-map-marker-alt mr-1"></i> Jemput: <strong class="text-slate-800" x-text="myActiveOrder.toko_nama || 'Titik Jemput'"></strong></p>
+                  <p class="text-slate-600 text-[11px]" x-text="myActiveOrder.titik_jemput || myActiveOrder.alamat_toko || '-'"></p>
+                  <hr class="border-slate-200 my-1">
+                  <p class="text-[10px] font-bold text-orange-600 uppercase"><i class="fas fa-flag-checkered mr-1"></i> Tujuan: <strong class="text-slate-800" x-text="myActiveOrder.customer_nama || 'Pelanggan'"></strong></p>
+                  <p class="text-slate-600 text-[11px]" x-text="myActiveOrder.titik_tujuan || myActiveOrder.alamat || '-'"></p>
+                </div>
+
+                <div class="space-y-3 pt-1">
+                  <button @click="bukaChatPelanggan()" class="w-full py-3.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 active:scale-98 text-emerald-700 font-black text-xs flex items-center justify-center gap-2 border border-emerald-200 shadow-sm transition-all">
+                    <i class="fas fa-comment-dots text-base"></i> Chat dengan Pelanggan
+                  </button>
+
+                  <template x-if="!['driver_tiba', 'mengantar', 'selesai'].includes(myActiveOrder.status)">
+                    <button @click="updateMyOrderStatus('driver_tiba')" class="w-full bg-emerald-500 hover:bg-emerald-600 active:scale-98 text-slate-950 text-xs font-black py-4 rounded-2xl shadow-md uppercase transition-all">Saya Sudah Sampai di Penjemputan</button>
+                  </template>
+                  <template x-if="myActiveOrder.status === 'driver_tiba'">
+                    <button @click="updateMyOrderStatus('mengantar')" class="w-full bg-blue-600 hover:bg-blue-500 active:scale-98 text-white text-xs font-black py-4 rounded-2xl shadow-md uppercase transition-all">Mulai Mengantar ke Tujuan ➔</button>
+                  </template>
+                  <template x-if="['mengantar', 'diantar'].includes(myActiveOrder.status)">
+                    <button @click="updateMyOrderStatus('selesai')" class="w-full bg-emerald-500 hover:bg-emerald-600 active:scale-98 text-slate-950 text-xs font-black py-4 rounded-2xl shadow-md uppercase transition-all">Selesaikan Pesanan ✓</button>
+                  </template>
+                </div>
+
+              </div>
+            </template>
+
+            <template x-if="!myActiveOrder">
+              <div class="space-y-3">
+                <template x-if="!driverData?.is_online">
+                  <div class="p-6 text-center space-y-2">
+                    <h3 class="text-sm font-black text-slate-800">Anda Sedang Offline</h3>
+                    <p class="text-xs text-slate-500">Aktifkan status online untuk menerima pesanan.</p>
+                  </div>
+                </template>
+
+                <template x-if="driverData?.is_online && availableOrders.length === 0">
+                  <div class="p-6 text-center space-y-2">
+                    <h3 class="text-sm font-black text-slate-800 animate-pulse">Memindai Orderan Terdekat...</h3>
+                    <p class="text-xs text-slate-500">Menunggu pesanan baru masuk dari sistem.</p>
+                  </div>
+                </template>
+
+                <template x-if="driverData?.is_online && availableOrders.length > 0">
+                  <div class="space-y-3">
+                    <h3 class="text-xs font-black text-slate-500 uppercase tracking-wider">⚡ Daftar Orderan Masuk</h3>
+                    <template x-for="ord in availableOrders" :key="ord.id">
+                      <div class="p-4 rounded-2xl border border-orange-200 bg-orange-50/30 space-y-3">
+                        <div class="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                          <span class="text-[10px] font-black bg-orange-100 text-orange-600 px-2.5 py-1 rounded-md uppercase" x-text="ord.layanan || 'ORDER BARU'"></span>
+                          <span class="text-sm font-black text-emerald-600" x-text="'Rp ' + (Number(ord.harga_total) || 0).toLocaleString('id-ID')"></span>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5"
+                             :class="getOrderPaymentMethod(ord) === 'Saldo' ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'">
+                          <div class="flex items-center gap-2 min-w-0">
+                            <i class="fas text-sm" :class="getOrderPaymentMethod(ord) === 'Saldo' ? 'fa-wallet text-emerald-700' : 'fa-money-bill-wave text-orange-700'"></i>
+                            <div class="min-w-0">
+                              <p class="text-[9px] uppercase font-bold text-slate-500">Pembayaran</p>
+                              <p class="text-xs font-black" :class="getOrderPaymentMethod(ord) === 'Saldo' ? 'text-emerald-700' : 'text-orange-700'" x-text="getOrderPaymentMethod(ord) === 'Saldo' ? 'Saldo SiapJek' : 'Tunai (COD)'"></p>
+                            </div>
+                          </div>
+                          <span class="text-[9px] font-bold text-right" :class="getOrderPaymentMethod(ord) === 'Saldo' ? 'text-emerald-700' : 'text-orange-700'" x-text="getOrderPaymentMethod(ord) === 'Saldo' ? 'Sudah dibayar' : 'Tagih pelanggan'"></span>
+                        </div>
+
+                        <div class="bg-white p-2.5 rounded-xl border border-slate-200/80 text-xs">
+                          <p class="text-[10px] font-bold text-slate-400 uppercase mb-0.5"><i class="fas fa-shopping-bag mr-1"></i> Detail Pesanan:</p>
+                          <p class="text-xs font-bold text-slate-800" x-text="ord.rincian_pesanan || ord.detail_barang || ord.toko_nama || 'Pesanan Ojek'"></p>
+                        </div>
+
+                        <div class="space-y-2 text-xs bg-white p-3 rounded-xl border border-slate-200/80">
+                          <div>
+                            <p class="text-[10px] font-bold text-sky-600 uppercase"><i class="fas fa-map-marker-alt mr-1"></i> Lokasi Jemput:</p>
+                            <p class="font-bold text-slate-800" x-text="ord.toko_nama || 'Titik Jemput'"></p>
+                            <p class="text-slate-500 text-[11px]" x-text="ord.titik_jemput || ord.alamat_toko || '-'"></p>
+                          </div>
+                          <hr class="border-slate-100">
+                          <div>
+                            <p class="text-[10px] font-bold text-orange-600 uppercase"><i class="fas fa-flag-checkered mr-1"></i> Lokasi Antar:</p>
+                            <p class="font-bold text-slate-800" x-text="ord.customer_nama || 'Pelanggan'"></p>
+                            <p class="text-slate-500 text-[11px]" x-text="ord.titik_tujuan || ord.alamat || '-'"></p>
+                          </div>
+                        </div>
+
+                        <button type="button" @click.prevent.stop="takeOrder(ord.id)" :disabled="!!takingOrderId" :class="takingOrderId ? 'opacity-70 cursor-wait bg-slate-300' : 'bg-emerald-500 hover:bg-emerald-600 active:scale-95'" class="w-full text-slate-950 font-black text-xs py-3.5 rounded-xl shadow-md transition disabled:active:scale-100"><span x-show="takingOrderId !== String(ord.id)">Ambil Pesanan Ini</span><span x-show="takingOrderId === String(ord.id)" x-cloak><i class="fas fa-circle-notch fa-spin mr-1"></i> Mengonfirmasi...</span></button>
+                        <p x-show="takingOrderId === String(ord.id) && takeOrderMessage" x-text="takeOrderMessage" class="text-[10px] text-amber-700 font-bold text-center mt-2" x-cloak></p>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB RIWAYAT SALDO: TERPISAH DARI RIWAYAT PESANAN -->
+      <div x-show="activeTab === 'balanceHistory'" x-cloak class="relative w-full h-full flex-1 bg-slate-50 p-4 overflow-y-auto pb-20">
+        <div class="max-w-md mx-auto space-y-4">
+          <div class="flex items-center gap-3 border-b border-slate-200 pb-3">
+            <button @click="activeTab = 'profile'" class="w-9 h-9 rounded-xl bg-white border border-slate-200 text-slate-600"><i class="fas fa-arrow-left"></i></button>
+            <div class="flex-1">
+              <h2 class="text-base font-black text-slate-800"><i class="fas fa-wallet text-emerald-600 mr-2"></i>Riwayat Saldo</h2>
+              <p class="text-[10px] text-slate-500">Pendapatan, komisi, top up, dan penarikan</p>
+            </div>
+          </div>
+          <!-- RIWAYAT MUTASI SALDO DRIVER -->
+          <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="p-4 flex items-center justify-between border-b border-slate-100">
+              <div>
+                <h3 class="text-sm font-black text-slate-800"><i class="fas fa-wallet text-emerald-600 mr-2"></i>Riwayat Saldo</h3>
+                <p class="text-[10px] text-slate-400 mt-1">Pendapatan, komisi, top up, dan penarikan</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-bold bg-emerald-50 text-emerald-700 rounded-full px-2.5 py-1" x-text="getDriverTransactionHistory().length + ' transaksi'"></span>
+                <button type="button" @click="hapusRiwayatSaldoPermanen()" :disabled="deletingBalanceHistory"
+                  class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[10px] font-extrabold text-red-600 active:scale-95 disabled:opacity-50"
+                  :aria-label="deletingBalanceHistory ? 'Menghapus riwayat saldo' : 'Hapus riwayat saldo'">
+                  <i class="fas" :class="deletingBalanceHistory ? 'fa-spinner fa-spin' : 'fa-trash-alt'"></i>
+                  <span x-text="deletingBalanceHistory ? 'Menghapus…' : 'Hapus'"></span>
+                </button>
+              </div>
+            </div>
+            <template x-if="getDriverTransactionHistory().length === 0">
+              <div class="p-6 text-center">
+                <i class="fas fa-receipt text-2xl text-slate-300"></i>
+                <p class="text-xs font-bold text-slate-600 mt-2">Belum ada transaksi saldo</p>
+                <p class="text-[10px] text-slate-400 mt-1">Perubahan saldo akan tercatat di sini.</p>
+              </div>
+            </template>
+            <div class="divide-y divide-slate-100">
+              <template x-for="tx in getDriverTransactionHistory()" :key="tx.id">
+                <div class="p-3.5 flex items-start gap-3">
+                  <div class="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center"
+                    :class="getTransactionDelta(tx) > 0 ? 'bg-emerald-100 text-emerald-700' : (String(tx.jenis || '').startsWith('topup_') && getTransactionDelta(tx) === 0 ? 'bg-amber-100 text-amber-700' : 'bg-orange-100 text-orange-700')">
+                    <i class="fas" :class="getTransactionDelta(tx) > 0 ? 'fa-arrow-down' : (String(tx.jenis || '').startsWith('topup_') && getTransactionDelta(tx) === 0 ? 'fa-clock' : 'fa-arrow-up')"></i>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs font-black text-slate-800" x-text="getTransactionTitle(tx)"></p>
+                    <p class="text-[10px] text-slate-500 mt-0.5" x-text="tx.keterangan || ('ID: ' + (tx.order_id || tx.id || '-'))"></p>
+                    <p class="text-[10px] text-slate-400 mt-1" x-text="formatTransactionDate(tx)"></p>
+                    <p x-show="tx.status && String(tx.jenis || '').startsWith('topup_')" class="text-[9px] font-bold mt-1 uppercase"
+                      :class="String(tx.status).toLowerCase() === 'approved' ? 'text-emerald-600' : 'text-amber-600'"
+                      x-text="String(tx.status).toLowerCase() === 'approved' ? 'Disetujui' : 'Menunggu verifikasi'"></p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="text-xs font-black" :class="getTransactionDelta(tx) > 0 ? 'text-emerald-600' : (getTransactionDelta(tx) < 0 ? 'text-red-500' : 'text-amber-600')"
+                      x-text="(getTransactionDelta(tx) > 0 ? '+' : (getTransactionDelta(tx) < 0 ? '−' : '')) + 'Rp ' + Math.abs(getTransactionDelta(tx)).toLocaleString('id-ID')"></p>
+                    <p x-show="getTransactionDelta(tx) === 0" class="text-[9px] text-slate-400 mt-1">Belum masuk saldo</p>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </section>
+
+        </div>
+      </div>
+
+      <!-- TAB 2: RIWAYAT PESANAN -->
+      <div x-show="activeTab === 'history'" class="relative w-full h-full flex-1 bg-slate-50 p-4 overflow-y-auto pb-20">
+        <div class="max-w-md mx-auto space-y-4">
+          <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+            <h2 class="text-base font-black text-slate-800"><i class="fas fa-history text-emerald-600 mr-2"></i>Riwayat Pesanan</h2>
+            <span class="text-xs font-bold text-slate-500" x-text="completedOrders.length + ' Total Selesai'"></span>
+          </div>
+
+          <div class="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-4 rounded-2xl shadow-md space-y-1">
+            <div class="flex justify-between items-center">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-200">Pendapatan Bersih Hari Ini</span>
+              <span class="text-[10px] font-bold bg-white/20 px-2 py-0.5 rounded-full" x-text="getTodayCompletedCount() + ' Order'"></span>
+            </div>
+            <p class="text-2xl font-black text-white" x-text="'Rp ' + getTodayNetEarnings().toLocaleString('id-ID')"></p>
+          </div>
+
+          <div class="border-b border-slate-200 pb-2 flex items-center justify-between gap-2">
+            <h3 class="text-sm font-black text-slate-800"><i class="fas fa-motorcycle text-emerald-600 mr-2"></i>Riwayat Pesanan</h3>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-slate-500" x-text="completedOrders.length + ' selesai'"></span>
+              <button type="button" @click="hapusRiwayatPesananPermanen()" :disabled="deletingOrderHistory || completedOrders.length === 0" class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[10px] font-extrabold text-red-600 active:scale-95 disabled:opacity-40">
+                <i class="fas" :class="deletingOrderHistory ? 'fa-spinner fa-spin' : 'fa-trash-alt'"></i><span x-text="deletingOrderHistory ? 'Menghapus…' : 'Hapus riwayat'"></span>
+              </button>
+            </div>
+          </div>
+
+          <template x-if="completedOrders.length === 0">
+            <div class="glass-panel rounded-3xl p-8 text-center space-y-2 bg-white mt-8">
+              <i class="fas fa-receipt text-3xl text-slate-300 mb-1"></i>
+              <h3 class="text-xs font-black text-slate-700">Belum Ada Riwayat</h3>
+              <p class="text-[11px] text-slate-400">Pesanan yang telah Anda selesaikan akan tampil di sini.</p>
+            </div>
+          </template>
+
+          <template x-for="item in completedOrders" :key="item.id">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
+              <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                <span class="text-[10px] font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded uppercase" x-text="item.layanan || 'SELESAI'"></span>
+                <span class="text-xs font-black text-emerald-600" x-text="'+ Rp ' + getOrderNetFare(item).toLocaleString('id-ID')"></span>
+              </div>
+              <div class="text-xs space-y-1">
+                <p class="font-bold text-slate-800" x-text="item.rincian_pesanan || item.toko_nama || 'Pesanan Selesai'"></p>
+                <p class="text-[11px] text-slate-500"><i class="fas fa-user mr-1"></i> Pelanggan: <strong class="text-slate-700" x-text="item.customer_nama || '-'"></strong></p>
+                <p class="text-[10px] text-slate-400" x-text="item.selesai_pada ? new Date(item.selesai_pada).toLocaleString('id-ID') : '-'"></p>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- TAB 3: PROFIL DRIVER -->
+      <div x-show="activeTab === 'profile'" class="relative w-full h-full flex-1 bg-slate-50 p-4 overflow-y-auto pb-20">
+        <div class="max-w-md mx-auto space-y-4">
+          <h2 class="text-base font-black text-slate-800 border-b border-slate-200 pb-3"><i class="fas fa-user-circle text-emerald-600 mr-2"></i>Profil Driver</h2>
+
+          <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
+            <template x-if="driverData?.foto">
+              <img :src="driverData.foto" alt="Foto Driver" class="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500 shadow">
+            </template>
+            <template x-if="!driverData?.foto">
+              <div class="w-16 h-16 rounded-2xl bg-emerald-500 text-slate-950 font-black text-2xl flex items-center justify-center border-2 border-white shadow">
+                <span x-text="driverData?.nama ? driverData.nama.charAt(0).toUpperCase() : 'D'"></span>
+              </div>
+            </template>
+
+            <div class="flex-1 space-y-0.5">
+              <h3 class="font-black text-slate-800 text-sm" x-text="driverData?.nama || 'Nama Driver'"></h3>
+              <p class="text-xs font-bold text-emerald-600" x-text="'ID: ' + (driverData?.id || '-')"></p>
+              <p class="text-[11px] text-slate-500" x-text="'Plat: ' + (driverData?.plat_nomor || '-')"></p>
+              <p class="text-[11px] text-slate-500" x-text="'HP: ' + (driverData?.no_hp || '-')"></p>
+            </div>
+          </div>
+
+          <div class="bg-gradient-to-br from-emerald-600 to-emerald-800 p-5 rounded-3xl text-white shadow-lg space-y-4">
+            <div class="flex justify-between items-center">
+              <div>
+                <p class="text-[10px] font-bold text-emerald-200 uppercase tracking-wider">Saldo Dompet Driver</p>
+                <h3 class="text-2xl font-black text-white mt-1" x-text="'Rp ' + (driverData?.saldo || 0).toLocaleString('id-ID')"></h3>
+              </div>
+              <i class="fas fa-wallet text-3xl text-emerald-300 opacity-80"></i>
+            </div>
+            
+            <hr class="border-emerald-500/50">
+
+            <div class="grid grid-cols-2 gap-2">
+              <button @click="bukaModalTopup()" class="bg-white hover:bg-emerald-50 active:scale-95 text-emerald-900 font-black py-2.5 rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5">
+                <i class="fas fa-plus-circle text-emerald-600"></i> Isi Saldo
+              </button>
+              <button @click="bukaModalWithdraw()" class="bg-emerald-950/40 hover:bg-emerald-950/60 active:scale-95 text-white border border-emerald-400/30 font-black py-2.5 rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5">
+                <i class="fas fa-arrow-alt-circle-down text-emerald-300"></i> Tarik Saldo
+              </button>
+            </div>
+
+            <p class="text-[10px] text-center text-emerald-200/80" x-text="'Min. Saldo Ambil Order: Rp ' + (adminConfig.min_saldo_ambil_order || 10000).toLocaleString('id-ID')"></p>
+            <button @click="activeTab = 'balanceHistory'" class="w-full bg-white/15 hover:bg-white/25 border border-white/20 text-white font-black py-3 rounded-xl text-xs flex items-center justify-center gap-2 transition">
+              <i class="fas fa-clock-rotate-left"></i> Lihat Riwayat Saldo <i class="fas fa-chevron-right text-[10px] ml-auto"></i>
+            </button>
+          </div>
+
+          <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+            <div class="flex items-center gap-2"><i class="fas fa-shield-halved text-emerald-600"></i><h3 class="font-black text-slate-800 text-sm">Keamanan Akun</h3></div>
+            <p class="text-xs text-slate-500">Email akun: <span class="font-bold text-slate-700" x-text="firebase.auth().currentUser?.email || driverData?.email || driverData?.email_auth || 'Belum terhubung' "></span></p>
+            <label class="block text-xs font-bold text-slate-600">Ganti email</label>
+            <input type="email" x-model="newEmail" placeholder="Masukkan email baru" autocomplete="email" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-500">
+            <button type="button" @click="kirimVerifikasiGantiEmail()" :disabled="isAuthActionBusy" class="w-full bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 text-emerald-800 font-black py-3 rounded-xl text-xs"><i class="fas fa-envelope-circle-check mr-1"></i> Kirim Verifikasi Email</button>
+            <p x-show="emailChangeMessage" x-text="emailChangeMessage" class="text-xs leading-relaxed text-emerald-700" x-cloak></p>
+            <p class="text-[10px] text-slate-400 leading-relaxed">Perubahan email hanya tersedia untuk akun yang masuk melalui Firebase Authentication. Konfirmasi harus dilakukan dari tautan yang dikirim ke email baru.</p>
+          </div>
+
+          <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3 text-xs">
+            <div class="flex justify-between items-center">
+              <div>
+                <p class="font-bold text-slate-800">Status Menerima Order</p>
+                <p class="text-[10px] text-slate-400" x-text="driverData?.is_online ? 'Anda sedang siap bekerja' : 'Anda sedang tidak aktif'"></p>
+              </div>
+              <button @click="toggleOnlineStatus()" 
+                :class="driverData?.is_online ? 'bg-emerald-500 text-slate-950' : 'bg-slate-200 text-slate-600'" 
+                class="px-4 py-2 rounded-xl font-black transition">
+                <span x-text="driverData?.is_online ? 'ONLINE' : 'OFFLINE'"></span>
+              </button>
+            </div>
+          </div>
+
+          <button @click="logoutDriver()" class="w-full bg-red-50 hover:bg-red-100 text-red-600 font-black py-3.5 rounded-2xl border border-red-200 text-xs flex items-center justify-center gap-2 transition">
+            <i class="fas fa-sign-out-alt"></i> Keluar dari Akun Driver
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- NAVBAR BAWAH -->
+    <div x-show="isLoggedIn" class="fixed bottom-0 left-0 right-0 max-w-[480px] mx-auto bg-white border-t border-slate-200 px-4 py-2 flex justify-around items-center z-30 h-[56px]">
+      <button @click="activeTab = 'orders'" :class="activeTab === 'orders' ? 'text-emerald-600 font-bold' : 'text-slate-400'" class="flex flex-col items-center gap-0.5">
+        <i class="fas fa-steering-wheel text-base"></i>
+        <span class="text-[10px]">Beranda</span>
+      </button>
+      <button @click="activeTab = 'history'" :class="activeTab === 'history' ? 'text-emerald-600 font-bold' : 'text-slate-400'" class="flex flex-col items-center gap-0.5">
+        <i class="fas fa-receipt text-base"></i>
+        <span class="text-[10px]">Riwayat Pesanan</span>
+      </button>
+      <button @click="activeTab = 'profile'" :class="activeTab === 'profile' ? 'text-emerald-600 font-bold' : 'text-slate-400'" class="flex flex-col items-center gap-0.5">
+        <i class="fas fa-user-circle text-base"></i>
+        <span class="text-[10px]">Profil</span>
+      </button>
+    </div>
+
+    <!-- MODAL TOP UP SALDO -->
+    <div x-show="showTopupModal" x-cloak class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div class="glass-panel w-full max-w-sm rounded-3xl p-5 space-y-4 text-xs bg-white">
+        <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+          <h3 class="font-black text-slate-800 text-sm">Isi Saldo Driver</h3>
+          <button @click="showTopupModal = false" class="text-slate-400 font-bold">✕</button>
+        </div>
+
+        <div x-show="topupStep === 1" class="space-y-4">
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Pilih Nominal Topup:</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button @click="pilihNominalTopup(20000)" :class="topupNominalBase === 20000 ? 'bg-emerald-500 text-slate-950 font-black border-emerald-500' : 'bg-slate-100 text-slate-700 border-slate-200'" class="p-2.5 rounded-xl border text-xs transition">20 RB</button>
+              <button @click="pilihNominalTopup(50000)" :class="topupNominalBase === 50000 ? 'bg-emerald-500 text-slate-950 font-black border-emerald-500' : 'bg-slate-100 text-slate-700 border-slate-200'" class="p-2.5 rounded-xl border text-xs transition">50 RB</button>
+              <button @click="pilihNominalTopup(100000)" :class="topupNominalBase === 100000 ? 'bg-emerald-500 text-slate-950 font-black border-emerald-500' : 'bg-slate-100 text-slate-700 border-slate-200'" class="p-2.5 rounded-xl border text-xs transition">100 RB</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Atau Masukkan Nominal Lain (Rp):</label>
+            <input type="number" x-model="topupNominalBase" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+          </div>
+
+          <button @click="lanjutTopupTransfer()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black py-3.5 rounded-xl shadow-md transition">
+            Lanjut Transfer ➔
+          </button>
+        </div>
+
+        <div x-show="topupStep === 2" class="space-y-4">
+          <div class="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 space-y-1 text-amber-900">
+            <p class="text-[11px] font-bold"><i class="fas fa-exclamation-triangle mr-1"></i> Instruksi Transfer</p>
+            <p class="text-[10px] leading-relaxed">Transfer persis sesuai <strong>nominal eksak</strong> di bawah ini beserta kode uniknya.</p>
+          </div>
+
+          <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+            <div>
+              <p class="text-[10px] text-slate-400 font-bold uppercase">Total yang Harus Ditransfer</p>
+              <div class="flex justify-between items-center mt-0.5">
+                <span class="text-xl font-black text-emerald-600" x-text="'Rp ' + topupTotalTransfer.toLocaleString('id-ID')"></span>
+                <button @click="salinKeClipboard(topupTotalTransfer, 'Nominal berhasil disalin!')" class="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-lg">Salin</button>
+              </div>
+            </div>
+            <p class="text-[10px] text-slate-400 italic" x-text="'Termasuk kode unik verifikasi: ' + topupUniqueCode"></p>
+          </div>
+
+          <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+            <p class="text-[10px] text-slate-400 font-bold uppercase">Rekening Tujuan (Admin)</p>
+            <div class="flex justify-between items-center">
+              <div>
+                <p class="font-black text-slate-800" x-text="adminConfig.rekening_admin.bank"></p>
+                <p class="text-sm font-bold text-slate-700 tracking-wide" x-text="adminConfig.rekening_admin.nomor"></p>
+                <p class="text-[10px] text-slate-500" x-text="'a.n ' + adminConfig.rekening_admin.atas_nama"></p>
+              </div>
+              <button @click="salinKeClipboard(adminConfig.rekening_admin.nomor, 'No Rekening berhasil disalin!')" class="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-1 rounded-lg">Salin</button>
+            </div>
+          </div>
+
+          <button @click="konfirmasiTopupWA()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black py-3.5 rounded-xl shadow-md transition flex items-center justify-center gap-2">
+            <i class="fab fa-whatsapp text-lg"></i> Konfirmasi Transfer via WA
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL WITHDRAW -->
+    <div x-show="showWithdrawModal" x-cloak class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div class="glass-panel w-full max-w-sm rounded-3xl p-5 space-y-4 text-xs bg-white">
+        <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+          <h3 class="font-black text-slate-800 text-sm">Tarik Saldo Driver</h3>
+          <button @click="showWithdrawModal = false" class="text-slate-400 font-bold">✕</button>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Nominal Penarikan (Rp):</label>
+            <input type="number" x-model="withdrawNominal" placeholder="Contoh: 50000" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+          </div>
+
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Bank / E-Wallet Tujuan:</label>
+            <select x-model="withdrawBank" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+              <option value="BCA">BCA</option>
+              <option value="BRI">BRI</option>
+              <option value="BNI">BNI</option>
+              <option value="MANDIRI">MANDIRI</option>
+              <option value="DANA">DANA</option>
+              <option value="GOPAY">GOPAY / OVO</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Nomor Rekening / HP:</label>
+            <input type="text" x-model="withdrawRekening" placeholder="Masukkan Nomor Rekening" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+          </div>
+
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Atas Nama Pemilik:</label>
+            <input type="text" x-model="withdrawAtasNama" placeholder="Nama Pemilik Rekening" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-800 outline-none">
+          </div>
+
+          <button @click="kirimPengajuanWithdraw()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black py-3.5 rounded-xl shadow-md transition flex items-center justify-center gap-2">
+            <i class="fab fa-whatsapp text-lg"></i> Ajukan Penarikan ke Admin
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL CHAT PELANGGAN -->
+    <div x-show="showCustomerChatModal" x-cloak class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-3 sm:p-4" style="height:100dvh; padding-bottom:max(12px, env(safe-area-inset-bottom));">
+      <div class="glass-panel w-full max-w-sm rounded-2xl p-3 sm:p-4 flex flex-col text-xs bg-white overflow-hidden" style="height:min(78dvh,640px); max-height:calc(100dvh - 24px); min-height:260px; border-radius:20px; contain:layout paint;">
+        <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+          <div>
+            <h3 class="font-black text-slate-800">Chat Pelanggan</h3>
+            <p class="text-[10px] text-slate-400" x-text="myActiveOrder?.customer_nama || 'Pelanggan'"></p>
+          </div>
+          <button @click="tutupChatPelanggan()" class="text-slate-400 font-bold text-lg p-1">✕</button>
+        </div>
+
+        <div x-ref="customerChatMessages" class="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 p-3 my-2 bg-slate-50 rounded-2xl" style="-webkit-overflow-scrolling:touch; overflow-anchor:auto;">
+          <template x-for="chat in customerChatHistory" :key="chat.id">
+            <div :class="chat.pengirim === 'driver' ? 'text-right' : 'text-left'">
+              <template x-if="chat.tipe !== 'gambar'">
+                <div :class="chat.pengirim === 'driver' ? 'bg-emerald-600 text-white ml-auto' : 'bg-slate-200 text-slate-800'" class="p-3 rounded-2xl max-w-[80%] inline-block text-left break-words shadow-sm">
+                  <span x-text="chat.pesan"></span>
+                </div>
+              </template>
+
+              <template x-if="chat.tipe === 'gambar'">
+                <div :class="chat.pengirim === 'driver' ? 'ml-auto' : ''" class="inline-block max-w-[80%] rounded-2xl overflow-hidden shadow-sm">
+                  <img :src="chat.gambar" alt="Foto Chat" loading="lazy" decoding="async" class="w-full h-auto max-h-52 object-cover block rounded-2xl">
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+
+        <div class="flex-shrink-0 space-y-1.5 pb-2" aria-label="Pesan cepat untuk pelanggan">
+          <p class="text-[10px] font-extrabold tracking-wide text-slate-500"><i class="fa-regular fa-message mr-1 text-emerald-600"></i> PESAN CEPAT</p>
+          <div class="flex gap-2 overflow-x-auto no-scrollbar py-0.5">
+            <button type="button" @click="kirimPesanTemplate('Halo Kak, saya driver SiapJek yang menerima pesanan Kakak.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">👋 Perkenalan</button>
+            <button type="button" @click="kirimPesanTemplate('Saya sedang menuju titik jemput ya, Kak.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">🛵 Menuju jemput</button>
+            <button type="button" @click="kirimPesanTemplate('Saya sudah sampai di titik jemput, Kak.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">📍 Sudah sampai</button>
+            <button type="button" @click="kirimPesanTemplate('Mohon tunggu sebentar ya, Kak. Saya sedang menyelesaikan proses pesanan.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">⏳ Mohon tunggu</button>
+            <button type="button" @click="kirimPesanTemplate('Saya sedang mengambil pesanan di toko, ya Kak.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">🛍️ Ambil pesanan</button>
+            <button type="button" @click="kirimPesanTemplate('Saya sudah berangkat mengantar pesanan ke lokasi tujuan, Kak.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">🚦 Sedang mengantar</button>
+            <button type="button" @click="kirimPesanTemplate('Saya sudah dekat dengan lokasi tujuan, Kak.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">🏁 Sudah dekat</button>
+            <button type="button" @click="kirimPesanTemplate('Maaf Kak, ada sedikit kendala di perjalanan. Saya akan memberi kabar kembali.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">⚠️ Ada kendala</button>
+            <button type="button" @click="kirimPesanTemplate('Terima kasih sudah menggunakan SiapJek, Kak.')" class="whitespace-nowrap shrink-0 px-3 py-2 bg-white hover:bg-emerald-50 text-[10px] font-bold text-emerald-800 rounded-xl border border-emerald-200 shadow-sm active:scale-95 transition">🙏 Terima kasih</button>
+          </div>
+        </div>
+
+        <div class="flex-shrink-0 flex items-center gap-2 pt-1 pb-[env(safe-area-inset-bottom)]">
+          <label class="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-600 p-3 rounded-xl border border-slate-300 flex items-center justify-center transition">
+            <i class="fas fa-camera text-base" :class="isUploadingImage ? 'animate-spin' : ''"></i>
+            <input type="file" accept="image/*" @change="kirimFotoChat($event)" class="hidden" :disabled="isUploadingImage">
+          </label>
+          <input type="text" x-model="customerChatInputText" @focus="$nextTick(() => { if ($refs.customerChatMessages) $refs.customerChatMessages.scrollTop = $refs.customerChatMessages.scrollHeight; setTimeout(() => { if ($refs.customerChatMessages) $refs.customerChatMessages.scrollTop = $refs.customerChatMessages.scrollHeight; }, 250) })" @keyup.enter="kirimPesanPelanggan()" placeholder="Ketik pesan..." :disabled="isSendingChat" class="flex-1 min-w-0 p-3 rounded-xl bg-slate-50 border border-slate-300 text-slate-800 outline-none">
+          <button @click="kirimPesanPelanggan()" :disabled="isSendingChat" class="bg-emerald-500 hover:bg-emerald-600 active:scale-95 disabled:opacity-50 text-slate-950 p-3 rounded-xl font-black transition"><i class="fas" :class="isSendingChat ? 'fa-spinner fa-spin' : 'fa-paper-plane'"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL KONFIRMASI -->
+    <div x-show="showActionModal" x-cloak class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+      <div class="glass-panel w-full max-w-sm rounded-3xl p-5 space-y-3 text-xs bg-white">
+        <h3 class="font-black text-slate-800 uppercase" x-text="actionModalTitle"></h3>
+        <p class="text-slate-600" x-text="actionModalMessage"></p>
+        <div class="flex gap-2 pt-2">
+          <button @click="showActionModal = false" class="flex-1 bg-slate-100 text-slate-600 font-bold py-2.5 rounded-xl">Batal</button>
+          <button @click="const cb = actionModalCallback; actionModalCallback = null; showActionModal = false; if (typeof cb === 'function') { Promise.resolve().then(() => cb()).catch(err => console.error('Aksi konfirmasi gagal:', err)); }" class="flex-1 bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl">Lanjutkan</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyB_Ndbf9idBUkMb5aNU-Bc8qZIEVI90Ddk",
+      authDomain: "siapjek-8d69c.firebaseapp.com",
+      databaseURL: "https://siapjek-8d69c-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "siapjek-8d69c"
+    };
+    if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+    const db = firebase.database();
+    const auth = firebase.auth();
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.warn("Persistence Auth tidak dapat diatur:", err));
+    // WebView Android kadang menangguhkan koneksi saat aplikasi lama di latar belakang.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (typeof db.goOnline === 'function') db.goOnline();
+        // WebView Android dapat menangguhkan GPS saat aplikasi di latar belakang.
+        try {
+          const root = document.querySelector('[x-data]');
+          const app = root && window.Alpine && typeof window.Alpine.$data === 'function' ? window.Alpine.$data(root) : null;
+          if (app && app.isLoggedIn) {
+            // Tunggu WebView/Firebase bangun kembali sebelum memperbarui data atau peta.
+            setTimeout(() => { try { app.pulihkanSetelahKembali(); } catch (e) { console.warn(e); } }, 350);
+          }
+        } catch (e) { console.warn('Pemulihan aplikasi setelah kembali:', e); }
+      }
+    });
+    window.addEventListener('pageshow', () => {
+      try {
+        const root = document.querySelector('[x-data]');
+        const app = root && window.Alpine && typeof window.Alpine.$data === 'function' ? window.Alpine.$data(root) : null;
+        if (app && app.isLoggedIn) setTimeout(() => { try { app.pulihkanSetelahKembali(); } catch (e) { console.warn(e); } }, 400);
+      } catch (e) { console.warn('Pemulihan pageshow:', e); }
+    });
+    window.addEventListener('online', () => {
+      if (typeof db.goOnline === 'function') db.goOnline();
+      try {
+        const root = document.querySelector('[x-data]');
+        const app = root && window.Alpine && typeof window.Alpine.$data === 'function' ? window.Alpine.$data(root) : null;
+        if (app && app.isLoggedIn) {
+          setTimeout(() => { try { app.pulihkanSetelahKembali(); } catch (e) { console.warn(e); } }, 250);
+        }
+      } catch (e) { console.warn('Pemulihan koneksi:', e); }
+    });
+  </script>
+</body>
+</html>

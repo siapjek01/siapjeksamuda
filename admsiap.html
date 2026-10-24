@@ -1,0 +1,2843 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiapJek - Panel Admin Ultra Pro (Google Maps)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Alpine.js & Firebase Compat (App, Database, & Auth) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  
+  <!-- Google Maps JavaScript API -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDfIDw6sjKoT-XuNYf8AUMMsQSFZ_jvScg&libraries=places"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    #google-toko-map { height: 280px; width: 100%; border-radius: 12px; z-index: 1; }
+    #google-order-map { height: 350px; width: 100%; border-radius: 12px; z-index: 1; }
+    #google-live-driver-map { height: 380px; width: 100%; display: block; border-radius: 12px; z-index: 1; position: relative; }
+  </style>
+</head>
+<body class="bg-slate-100 font-sans min-h-screen text-slate-800">
+
+  <div x-data="adminPanel()" class="flex flex-col min-h-screen">
+
+    <!-- LOGIN SCREEN (EMAIL & PASSWORD FIREBASE) -->
+    <div x-show="!isLoggedIn" x-cloak class="fixed inset-0 bg-slate-900 z-50 flex items-center justify-center p-4">
+      <div class="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-2xl border border-slate-200">
+        <div class="text-center space-y-2">
+          <div class="w-14 h-14 rounded-2xl bg-orange-500 text-white font-black text-2xl flex items-center justify-center mx-auto shadow-lg">SJ</div>
+          <h2 class="text-xl font-black text-slate-800">SiapJek Admin Pro</h2>
+          <p class="text-xs text-slate-500">Gunakan akun admin Firebase Anda</p>
+        </div>
+        
+        <form @submit.prevent="loginAdminEmail()" class="space-y-3">
+          <div>
+            <input type="email" x-model="inputEmail" placeholder="Email Admin" class="w-full p-3 bg-slate-50 border rounded-xl text-xs outline-none focus:border-emerald-600 font-bold tracking-wide mb-3" required autofocus>
+            <input type="password" x-model="inputPassword" placeholder="Password" class="w-full p-3 bg-slate-50 border rounded-xl text-xs outline-none focus:border-emerald-600 font-bold tracking-wide" required>
+          </div>
+          <button type="submit" :disabled="isLoggingIn" class="w-full bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-400 text-white font-black py-3 rounded-xl shadow-md text-xs transition-all flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-lock-open" x-show="!isLoggingIn"></i> 
+            <i class="fa-solid fa-spinner fa-spin" x-show="isLoggingIn"></i>
+            <span x-text="isLoggingIn ? 'MEMPROSES...' : 'MASUK PANEL ADMIN'"></span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- MAIN PANEL -->
+    <template x-if="isLoggedIn">
+      <div class="flex flex-col min-h-screen">
+        <header class="bg-emerald-800 text-white shadow-md sticky top-0 z-30">
+          <div class="px-4 py-3 flex items-center justify-between border-b border-emerald-700">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-orange-500 text-white flex items-center justify-center font-black text-sm shadow-md">SJ</div>
+              <div>
+                <h1 class="font-black text-xs tracking-wide">SiapJek Admin Pro</h1>
+                <p class="text-[10px] text-emerald-200" x-text="currentUserEmail ? 'Auth: ' + currentUserEmail : 'Panel Kontrol Utama Samuda'"></p>
+              </div>
+            </div>
+            <button @click="logoutAdmin()" class="bg-emerald-900 hover:bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm">
+              <i class="fa-solid fa-right-from-bracket"></i> Keluar
+            </button>
+          </div>
+          
+          <nav class="flex overflow-x-auto no-scrollbar px-3 py-2 gap-2 bg-emerald-900/60">
+            <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-chart-pie"></i> Dashboard</button>
+            <button @click="activeTab = 'orders'" :class="activeTab === 'orders' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-receipt"></i> Pesanan <span x-show="orders.filter(o => o.status === 'pending' || o.status === 'waiting_merchant').length > 0" x-text="orders.filter(o => o.status === 'pending' || o.status === 'waiting_merchant').length" class="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full ml-1 animate-pulse"></span></button>
+            <button @click="activeTab = 'live_drivers'" :class="activeTab === 'live_drivers' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-location-crosshairs"></i> Live Driver</button>
+            <button @click="activeTab = 'chats'" :class="activeTab === 'chats' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-headset"></i> Live Chat <span x-show="totalUnreadChats > 0" x-text="totalUnreadChats" class="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full ml-1 animate-pulse"></span></button>
+            <button @click="activeTab = 'customers'" :class="activeTab === 'customers' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0">
+              <i class="fa-solid fa-users"></i> Pelanggan <span x-show="customers.length > 0" x-text="customers.length" class="bg-blue-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full ml-1"></span>
+            </button>
+            <button @click="activeTab = 'merchants'" :class="activeTab === 'merchants' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-store"></i> Mitra / Toko</button>
+            <button @click="activeTab = 'products'" :class="activeTab === 'products' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-box-open"></i> Kelola Produk</button>
+            <button @click="activeTab = 'drivers'" :class="activeTab === 'drivers' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-motorcycle"></i> Kelola Driver</button>
+            <button @click="activeTab = 'finance'" :class="activeTab === 'finance' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-wallet"></i> Keuangan <span x-show="pendingWithdrawals.length + pendingTopups.length > 0" x-text="pendingWithdrawals.length + pendingTopups.length" class="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full ml-1 animate-pulse"></span></button>
+            <button @click="activeTab = 'code_editor'" :class="activeTab === 'code_editor' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-code"></i> Editor Kode App</button>
+            <button @click="activeTab = 'settings'" :class="activeTab === 'settings' ? 'bg-orange-500 text-white font-extrabold shadow-sm' : 'text-emerald-100 hover:bg-emerald-700/50'" class="px-3 py-2 rounded-xl text-xs whitespace-nowrap flex items-center gap-2 transition-all shrink-0"><i class="fa-solid fa-cogs"></i> Pengaturan</button>
+          </nav>
+        </header>
+
+        <main class="flex-1 p-4 md:p-6 overflow-y-auto">
+          
+          <!-- TAB 1: DASHBOARD -->
+          <div x-show="activeTab === 'overview'" x-cloak class="space-y-6">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+              <div class="bg-white p-4 rounded-2xl border shadow-xs"><span class="text-xs text-slate-400 font-bold block">PESANAN HARI INI</span><span class="text-xl font-black text-slate-800" x-text="getPesananHariIniCount()">0</span></div>
+              <div class="bg-white p-4 rounded-2xl border shadow-xs"><span class="text-xs text-slate-400 font-bold block">MITRA TOKO</span><span class="text-xl font-black text-emerald-700" x-text="merchants.filter(m => m.kategori !== 'Motor' && m.kategori !== 'Jastip').length">0</span></div>
+              <div class="bg-white p-4 rounded-2xl border shadow-xs"><span class="text-xs text-slate-400 font-bold block">PELANGGAN</span><span class="text-xl font-black text-blue-600" x-text="customers.length">0</span></div>
+              <div class="bg-white p-4 rounded-2xl border shadow-xs"><span class="text-xs text-slate-400 font-bold block">DRIVER AKTIF</span><span class="text-xl font-black text-orange-500" x-text="drivers.filter(d => d.status === 'aktif').length">0</span></div>
+              
+              <div class="bg-gradient-to-br from-amber-500 to-orange-600 p-4 rounded-2xl shadow-xs text-white">
+                <span class="text-xs text-amber-100 font-bold block uppercase truncate"><i class="fa-solid fa-calendar-day mr-1"></i> Komisi Hari Ini</span>
+                <span class="text-xl font-black" x-text="'Rp ' + getKomisiHariIni().toLocaleString('id-ID')">Rp 0</span>
+              </div>
+              
+              <div class="bg-gradient-to-br from-emerald-600 to-emerald-800 p-4 rounded-2xl shadow-xs text-white">
+                <span class="text-xs text-emerald-200 font-bold block uppercase truncate"><i class="fa-solid fa-chart-line mr-1"></i> Total Komisi</span>
+                <span class="text-xl font-black" x-text="'Rp ' + getTotalKomisi().toLocaleString('id-ID')">Rp 0</span>
+              </div>
+            </div>
+
+              <!-- Pengaturan Loader Pelanggan: diseragamkan dengan Driver dan Mitra -->
+            <div class="bg-white p-4 md:p-5 rounded-2xl border shadow-xs space-y-3 border-blue-200 bg-blue-50/20">
+              <div class="border-b pb-2">
+                <h3 class="text-xs font-black text-slate-800"><i class="fa-solid fa-user text-blue-600 mr-1.5"></i> Pengaturan Loader Pelanggan</h3>
+                <p class="text-xs text-slate-500 mt-1">Pilih sumber aplikasi Pelanggan dan simpan URL hosting jika memakai Link.</p>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label class="flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer" :class="loaderMode === 'source' ? 'border-blue-500 bg-blue-50' : 'border-slate-200'">
+                  <input type="radio" name="loaderMode" value="source" x-model="loaderMode">
+                  <span class="text-xs font-bold">Source Code Firebase</span>
+                </label>
+                <label class="flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer" :class="loaderMode === 'link' ? 'border-blue-500 bg-blue-50' : 'border-slate-200'">
+                  <input type="radio" name="loaderMode" value="link" x-model="loaderMode">
+                  <span class="text-xs font-bold">Link Hosting</span>
+                </label>
+              </div>
+              <div class="flex gap-2">
+                <input type="url" x-model="customerLinkInput" placeholder="https://pelanggan-siapjek.web.app" class="flex-1 min-w-0 p-2.5 bg-white border border-blue-200 rounded-xl text-xs font-bold">
+                <button @click="saveCustomerLink()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shrink-0">Simpan Link</button>
+              </div>
+              <button @click="saveLoaderMode()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl">
+                <i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Metode Loader Pelanggan
+              </button>
+            </div>
+
+            <!-- Pengaturan Loader Driver -->
+            <div class="bg-white p-4 md:p-5 rounded-2xl border shadow-xs space-y-3 border-orange-200 bg-orange-50/20">
+              <div class="border-b pb-2"><h3 class="text-xs font-black text-slate-800"><i class="fa-solid fa-motorcycle text-orange-600 mr-1.5"></i> Pengaturan Loader Driver</h3><p class="text-xs text-slate-500 mt-1">Pilih metode sumber aplikasi Driver dan simpan URL hosting jika memakai Link.</p></div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label class="flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer" :class="driverLoaderMode === 'source' ? 'border-orange-500 bg-orange-50' : 'border-slate-200'"><input type="radio" name="driverLoaderMode" value="source" x-model="driverLoaderMode"><span class="text-xs font-bold">Source Code Firebase</span></label>
+                <label class="flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer" :class="driverLoaderMode === 'link' ? 'border-orange-500 bg-orange-50' : 'border-slate-200'"><input type="radio" name="driverLoaderMode" value="link" x-model="driverLoaderMode"><span class="text-xs font-bold">Link Hosting</span></label>
+              </div>
+              <div class="flex gap-2"><input type="url" x-model="driverLinkInput" placeholder="https://driver-siapjek.web.app" class="flex-1 min-w-0 p-2.5 bg-white border border-orange-200 rounded-xl text-xs font-bold"><button @click="saveAppLoaderLink('driver')" class="bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl">Simpan Link</button></div>
+              <button @click="saveAppLoaderMode('driver')" class="w-full bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Metode Loader Driver</button>
+            </div>
+
+            <!-- Pengaturan Loader Mitra -->
+            <div class="bg-white p-4 md:p-5 rounded-2xl border shadow-xs space-y-3 border-purple-200 bg-purple-50/20">
+              <div class="border-b pb-2"><h3 class="text-xs font-black text-slate-800"><i class="fa-solid fa-store text-purple-600 mr-1.5"></i> Pengaturan Loader Mitra</h3><p class="text-xs text-slate-500 mt-1">Pilih metode sumber aplikasi Mitra dan simpan URL hosting jika memakai Link.</p></div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label class="flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer" :class="mitraLoaderMode === 'source' ? 'border-purple-500 bg-purple-50' : 'border-slate-200'"><input type="radio" name="mitraLoaderMode" value="source" x-model="mitraLoaderMode"><span class="text-xs font-bold">Source Code Firebase</span></label>
+                <label class="flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer" :class="mitraLoaderMode === 'link' ? 'border-purple-500 bg-purple-50' : 'border-slate-200'"><input type="radio" name="mitraLoaderMode" value="link" x-model="mitraLoaderMode"><span class="text-xs font-bold">Link Hosting</span></label>
+              </div>
+              <div class="flex gap-2"><input type="url" x-model="mitraLinkInput" placeholder="https://mitra-siapjek.web.app" class="flex-1 min-w-0 p-2.5 bg-white border border-purple-200 rounded-xl text-xs font-bold"><button @click="saveAppLoaderLink('mitra')" class="bg-purple-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl">Simpan Link</button></div>
+              <button @click="saveAppLoaderMode('mitra')" class="w-full bg-purple-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl"><i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Metode Loader Mitra</button>
+            </div>
+
+            <!-- Rekening Tujuan Top-Up Admin -->
+            <div class="bg-white p-4 md:p-5 rounded-2xl border shadow-xs space-y-3">
+              <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="text-xs font-black text-slate-800"><i class="fa-solid fa-building-columns text-emerald-600 mr-1.5"></i> Rekening Tujuan Top-Up (Tampil di Aplikasi User/Driver/Mitra)</h3>
+                <span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-1 rounded-full"><i class="fa-solid fa-wifi text-emerald-600 mr-1 animate-pulse"></i> Real-Time Synced</span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div><label class="font-bold text-slate-600 block mb-1">Bank / E-Wallet:</label><input type="text" x-model="bankSettings.nama_bank" placeholder="Contoh: BCA / DANA / BRI" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold"></div>
+                <div><label class="font-bold text-slate-600 block mb-1">No Rekening / No HP:</label><input type="text" x-model="bankSettings.nomor_rekening" placeholder="Contoh: 1234567890" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold text-emerald-700"></div>
+                <div><label class="font-bold text-slate-600 block mb-1">Atas Nama (A/N):</label><input type="text" x-model="bankSettings.atas_nama" placeholder="Contoh: Admin SiapJek" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold"></div>
+              </div>
+              <div class="flex gap-2">
+                <button @click="saveBankSettings()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all"><i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Rekening</button>
+              </div>
+            </div>
+
+            <!-- Banner Utama & Running Text -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-white p-4 md:p-5 rounded-2xl border shadow-xs space-y-3">
+                <h3 class="text-xs font-black text-slate-800 border-b pb-2"><i class="fa-solid fa-image text-emerald-600 mr-1.5"></i> Banner Utama Aplikasi</h3>
+                <div class="grid grid-cols-1 gap-2.5 text-xs">
+                  <div><label class="font-bold text-slate-600 block mb-1">Tagline:</label><input type="text" x-model="topBanner.tag" class="w-full p-2 bg-slate-50 border rounded-xl"></div>
+                  <div><label class="font-bold text-slate-600 block mb-1">Judul Utama:</label><input type="text" x-model="topBanner.title" class="w-full p-2 bg-slate-50 border rounded-xl"></div>
+                  <div><label class="font-bold text-slate-600 block mb-1">Deskripsi Singkat:</label><input type="text" x-model="topBanner.desc" class="w-full p-2 bg-slate-50 border rounded-xl"></div>
+                  <div><label class="font-bold text-slate-600 block mb-1">Unggah Ikon/Gambar:</label><input type="file" accept="image/*" @change="uploadAndCompressImage($event, topBanner, 'img')" class="w-full text-xs p-1 bg-slate-50 border rounded-xl"></div>
+                </div>
+                <div x-show="topBanner.img" class="mt-2"><img :src="topBanner.img" class="w-16 h-16 object-contain border rounded-xl p-1 bg-slate-50"></div>
+                <button @click="saveTopBanner()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm">Simpan Banner</button>
+              </div>
+
+              <div class="bg-white p-4 md:p-5 rounded-2xl border shadow-xs space-y-3 flex flex-col justify-between">
+                <div>
+                  <h3 class="text-xs font-black text-slate-800 border-b pb-2"><i class="fa-solid fa-bullhorn text-orange-500 mr-1.5"></i> Running Text / Pengumuman</h3>
+                  <p class="text-xs text-slate-500 mb-2">Teks berjalan di halaman depan aplikasi pelanggan.</p>
+                  <textarea x-model="runningText" rows="4" class="w-full text-xs p-3 bg-slate-50 border rounded-xl font-medium outline-none"></textarea>
+                </div>
+                <button @click="saveRunningText()" class="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm">Simpan Running Text</button>
+              </div>
+            </div>
+
+            <!-- Slide Promo -->
+            <div class="bg-white p-4 md:p-5 rounded-2xl border shadow-xs space-y-4">
+              <div class="border-b pb-2">
+                <h3 class="text-xs font-black text-slate-800">🖼️ Kelola 3 Slide Promo Pelanggan</h3>
+                <p class="text-[11px] text-slate-500">Rasio tampilan gambar presisi sesuai slider promo beranda aplikasi.</p>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <template x-for="slot in [1, 2, 3]" :key="slot">
+                  <div class="bg-slate-50 border rounded-2xl p-3 space-y-2">
+                    <div class="flex justify-between items-center">
+                      <span class="text-xs font-black text-slate-700" x-text="'Slide Promo ' + slot"></span>
+                      <button x-show="adminPromos['slide_'+slot]" @click="deletePromoSlide('slide_'+slot)" class="text-xs bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-lg">Hapus</button>
+                    </div>
+                    <div class="w-full h-28 bg-slate-200 rounded-xl overflow-hidden border relative flex justify-center items-center shadow-inner">
+                      <template x-if="adminPromos['slide_'+slot] && adminPromos['slide_'+slot].gambar">
+                        <img :src="adminPromos['slide_'+slot].gambar" class="w-full h-full object-cover">
+                      </template>
+                      <template x-if="!adminPromos['slide_'+slot]">
+                        <span class="text-xs text-slate-400 font-bold">📷 Belum ada gambar</span>
+                      </template>
+                    </div>
+                    <input type="file" accept="image/*" @change="uploadSlideDirect($event, slot)" class="w-full text-xs p-1 bg-white border rounded-lg cursor-pointer">
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: PESANAN -->
+          <div x-show="activeTab === 'orders'" x-cloak class="space-y-4">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              <div>
+                <h3 class="text-sm font-black text-slate-800">📦 Real-Time Monitoring Pesanan</h3>
+                <p class="text-xs text-slate-500">Menampilkan pesanan dalam sistem (pesanan selesai > 7 hari otomatis terhapus).</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                <input type="text" x-model="searchOrder" placeholder="🔍 Cari ID / Nama / Driver..." class="w-full md:w-60 p-2 bg-white border rounded-xl text-xs outline-none">
+              </div>
+            </div>
+            
+            <div class="space-y-3">
+              <template x-for="ord in filteredOrders" :key="ord.id">
+                <div class="bg-white p-4 rounded-2xl border shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-3 hover:border-emerald-300 transition-all">
+                  <div class="space-y-1 w-full md:flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-black text-slate-800" x-text="ord.id"></span>
+                      <span :class="{'bg-amber-100 text-amber-700': ord.status === 'pending' || ord.status === 'waiting_merchant','bg-blue-100 text-blue-700': ord.status === 'diproses','bg-emerald-100 text-emerald-700': ord.status === 'selesai','bg-red-100 text-red-700': ord.status === 'dibatalkan'}" class="text-xs font-black px-2.5 py-0.5 rounded-full capitalize" x-text="ord.status"></span>
+                    </div>
+                    <h4 class="text-xs font-extrabold text-emerald-800" x-text="ord.nama_produk"></h4>
+                    <div class="text-xs text-slate-600 bg-slate-50 p-2 rounded-xl border mt-1 space-y-1">
+                      <div class="flex justify-between"><p>👤 Cust: <strong class="text-slate-800" x-text="ord.customer_nama || getCustomerName(ord.customer_id)"></strong></p><a x-show="ord.customer_hp || getCustomerHp(ord.customer_id)" :href="'https://wa.me/'+(ord.customer_hp || getCustomerHp(ord.customer_id))" target="_blank" class="text-emerald-600 font-bold hover:underline"><i class="fa-brands fa-whatsapp"></i> Chat WA</a></div>
+                      <div class="flex justify-between"><p>🛵 Driver: <strong class="text-blue-600" x-text="ord.driver_nama || 'Belum ada driver'"></strong></p><a x-show="ord.driver_hp" :href="'https://wa.me/'+ord.driver_hp" target="_blank" class="text-blue-600 font-bold hover:underline"><i class="fa-brands fa-whatsapp"></i> Chat WA</a></div>
+                      <p class="mt-1 border-t pt-1">📍 Jemput: <span x-text="ord.titik_jemput || ord.toko_nama"></span></p>
+                      <p>🏠 Antar: <span x-text="ord.titik_tujuan"></span></p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 pt-1">
+                      <div class="text-xs font-black text-orange-600" x-text="'Total Bayar: Rp ' + Number(ord.harga_total || 0).toLocaleString('id-ID')"></div>
+                      <span class="text-[10px] font-black px-2 py-1 rounded-full border" :class="String(ord.metode_pembayaran || 'COD').toLowerCase() === 'saldo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'" x-text="'Bayar: ' + (String(ord.metode_pembayaran || 'COD').toLowerCase() === 'saldo' ? 'Saldo SiapPay' : 'COD / Tunai')"></span>
+                      <span x-show="String(ord.metode_pembayaran || 'COD').toLowerCase() === 'saldo'" class="text-[10px] font-bold text-slate-500" x-text="'Pembayaran: ' + (ord.pembayaran_status || 'terbayar')"></span>
+                      <span x-show="ord.keuangan_status && ord.keuangan_status.status === 'done'" class="text-[10px] font-bold text-emerald-700">Keuangan diproses ✓</span>
+                    </div>
+                  </div>
+                  <div class="flex flex-col md:flex-row items-center gap-2 shrink-0 w-full md:w-auto">
+                    <div class="flex flex-wrap gap-1.5 w-full md:w-auto">
+                      <button @click="openAssignDriverModal(ord)" class="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 shadow-xs"><i class="fa-solid fa-user-plus"></i> Pilih Driver</button>
+                      <button @click="updateOrderStatus(ord.id, 'diproses')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs">Proses</button>
+                      <button @click="updateOrderStatus(ord.id, 'selesai')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs">Selesai</button>
+                      <button @click="updateOrderStatus(ord.id, 'dibatalkan')" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs">Batal</button>
+                    </div>
+                    <button @click="openOrderMap(ord)" class="w-full md:w-auto bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center justify-center gap-1 shadow-xs"><i class="fa-solid fa-map-location-dot"></i> Peta Rute</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- TAB 3: LIVE DRIVER -->
+          <div x-show="activeTab === 'live_drivers'" x-cloak class="space-y-4">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              <div><h3 class="text-sm font-black text-slate-800">📍 Live Monitoring Posisi Driver (Google Maps)</h3><p class="text-xs text-slate-500">Pantau lokasi driver aktif secara real-time di peta.</p></div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border shadow-xs space-y-3">
+              <div id="google-live-driver-map" class="shadow-md border border-slate-200" style="height: 380px; width: 100%;"></div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+                <template x-for="d in drivers.filter(d => d.status === 'aktif')" :key="d.id">
+                  <div class="bg-slate-50 border p-3 rounded-xl flex items-center gap-3">
+                    <img :src="d.foto || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'" class="w-10 h-10 rounded-full object-cover border shrink-0">
+                    <div class="flex-1 min-w-0">
+                      <h4 class="text-xs font-black text-slate-800 truncate" x-text="d.nama"></h4>
+                      <p class="text-[11px] text-emerald-700 font-bold truncate" x-text="(d.merk_motor || '') + ' ' + (d.nama_motor || '')"></p>
+                      <p class="text-[10px] text-slate-500 truncate" x-text="d.plat_nomor || '-'"></p>
+                      <div class="flex items-center gap-1 mt-1">
+                        <span class="w-2 h-2 rounded-full animate-pulse" :class="isDriverBusy(d.id) ? 'bg-amber-500' : 'bg-emerald-500'"></span>
+                        <span class="text-[10px] font-bold" :class="isDriverBusy(d.id) ? 'text-amber-600' : 'text-emerald-600'" x-text="isDriverBusy(d.id) ? 'Sedang Mengantar' : 'Tersedia'"></span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: LIVE CHAT -->
+          <div x-show="activeTab === 'chats'" x-cloak class="space-y-4">
+            <div>
+              <h3 class="text-sm font-black text-slate-800">💬 Live Chat & Pusat Bantuan Pengguna</h3>
+              <p class="text-xs text-slate-500">Pusat kendali percakapan dan kendala dari Pelanggan, Driver, dan Mitra Toko.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-2xl border shadow-xs h-[550px]">
+              <div class="border-r pr-2 space-y-2 h-full overflow-y-auto no-scrollbar">
+                <h4 class="text-xs font-black text-slate-700 uppercase tracking-wider mb-2 sticky top-0 bg-white py-1">Daftar Percakapan</h4>
+                
+                <template x-for="(chatData, custId) in allCustomerChats" :key="custId">
+                  <div @click="selectActiveChat(custId, 'customer')" :class="activeChatId === custId ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'" class="p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between">
+                    <div>
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded">PELANGGAN</span>
+                        <span x-show="hasUnreadChat(chatData)" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                      </div>
+                      <h5 class="text-xs font-black text-slate-800 mt-1" x-text="getCustomerName(custId)"></h5>
+                      <p class="text-[10px] text-slate-500 truncate max-w-[150px]" x-text="getLastMessage(chatData)"></p>
+                    </div>
+                  </div>
+                </template>
+
+                <template x-for="(chatData, drvId) in allDriverChats" :key="drvId">
+                  <div @click="selectActiveChat(drvId, 'driver')" :class="activeChatId === drvId ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'" class="p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between">
+                    <div>
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-[9px] bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded">DRIVER</span>
+                        <span x-show="hasUnreadChat(chatData)" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                      </div>
+                      <h5 class="text-xs font-black text-slate-800 mt-1" x-text="getDriverName(drvId)"></h5>
+                      <p class="text-[10px] text-slate-500 truncate max-w-[150px]" x-text="getLastMessage(chatData)"></p>
+                    </div>
+                  </div>
+                </template>
+
+                <template x-for="(chatData, merchId) in allMerchantChats" :key="merchId">
+                  <div @click="selectActiveChat(merchId, 'merchant')" :class="activeChatId === merchId ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'" class="p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between">
+                    <div>
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded">MITRA TOKO</span>
+                        <span x-show="hasUnreadChat(chatData)" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                      </div>
+                      <h5 class="text-xs font-black text-slate-800 mt-1" x-text="getMerchantName(merchId)"></h5>
+                      <p class="text-[10px] text-slate-500 truncate max-w-[150px]" x-text="getLastMessage(chatData)"></p>
+                    </div>
+                  </div>
+                </template>
+
+                <template x-if="Object.keys(allCustomerChats).length === 0 && Object.keys(allDriverChats).length === 0 && Object.keys(allMerchantChats).length === 0">
+                  <p class="text-xs text-slate-400 text-center py-10 italic">Belum ada pesan masuk.</p>
+                </template>
+              </div>
+
+              <div class="md:col-span-2 flex flex-col justify-between bg-slate-50/50 p-3 rounded-2xl border h-full">
+                <template x-if="!activeChatId">
+                  <div class="flex-1 flex flex-col items-center justify-center text-slate-400 text-xs">
+                    <i class="fa-solid fa-comments text-3xl mb-2 text-slate-300"></i>
+                    <p>Pilih salah satu percakapan di sebelah kiri untuk mulai membalas.</p>
+                  </div>
+                </template>
+
+                <template x-if="activeChatId">
+                  <div class="flex flex-col h-full justify-between">
+                    <div class="border-b pb-2 mb-3 flex items-center justify-between shrink-0">
+                      <div>
+                        <span class="text-[9px] uppercase font-bold px-2 py-0.5 rounded" :class="activeChatType === 'customer' ? 'bg-blue-100 text-blue-700' : (activeChatType === 'driver' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700')" x-text="activeChatType"></span>
+                        <h4 class="text-xs font-black text-slate-800 mt-0.5" x-text="activeChatType === 'customer' ? getCustomerName(activeChatId) : (activeChatType === 'driver' ? getDriverName(activeChatId) : getMerchantName(activeChatId))"></h4>
+                      </div>
+                      <button @click="activeChatId = null" class="text-xs text-slate-400 hover:text-red-500 font-bold">Tutup Chat</button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto space-y-3 pr-1 no-scrollbar mb-3">
+                      <template x-for="msg in activeChatMessages" :key="msg.id">
+                        <div :class="msg.pengirim === 'admin' ? 'text-right' : 'text-left'" class="space-y-0.5 group relative">
+                          <div class="flex items-center gap-1" :class="msg.pengirim === 'admin' ? 'justify-end' : 'justify-start'">
+                            <span class="text-[8px] text-slate-400 font-bold uppercase" x-text="msg.pengirim === 'admin' ? 'Admin' : activeChatType"></span>
+                            <button @click="deleteChatMessage(msg.id)" title="Hapus Pesan Ini" class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 text-[10px] px-1 transition-opacity">
+                              <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                          </div>
+                          
+                          <div :class="msg.pengirim === 'admin' ? 'bg-emerald-600 text-white ml-auto' : 'bg-white text-slate-800 border mr-auto'" class="p-2.5 rounded-xl text-xs max-w-[80%] inline-block text-left break-words shadow-xs">
+                            <template x-if="getChatImage(msg)">
+                              <div class="mb-1">
+                                <a :href="getChatImage(msg)" target="_blank" rel="noopener noreferrer">
+                                  <img :src="getChatImage(msg)" alt="Foto chat" loading="lazy" class="max-w-[200px] max-h-[200px] rounded-lg object-contain border cursor-pointer hover:opacity-90 bg-white">
+                                </a>
+                              </div>
+                            </template>
+                            <p x-text="getChatText(msg)" x-show="getChatText(msg)"></p>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+
+                    <template x-if="adminChatPhotoPreview">
+                      <div class="relative inline-block mb-2 p-1 bg-white border rounded-xl w-20 h-20 shadow-sm shrink-0">
+                        <img :src="adminChatPhotoPreview" class="w-full h-full object-cover rounded-lg">
+                        <button @click="adminChatPhotoPreview = null" class="absolute -top-2 -right-2 bg-red-600 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold">✕</button>
+                      </div>
+                    </template>
+
+                    <div class="flex gap-2 pt-2 border-t shrink-0 items-center">
+                      <label class="cursor-pointer text-slate-500 hover:text-emerald-600 p-2 bg-white border rounded-xl shadow-2xs flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-paperclip text-sm"></i>
+                        <input type="file" accept="image/*" @change="handleChatPhotoUpload($event)" class="hidden">
+                      </label>
+                      <input type="text" x-model="adminReplyText" placeholder="Ketik balasan admin..." @keyup.enter="sendAdminReply()" class="flex-1 p-2.5 bg-white border rounded-xl text-xs outline-none">
+                      <button @click="sendAdminReply()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1">
+                        <i class="fa-solid fa-paper-plane"></i> Kirim
+                      </button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 5: KELOLA PELANGGAN -->
+          <div x-show="activeTab === 'customers'" x-cloak class="space-y-6">
+            
+            <!-- Ringkasan Statistik Pelanggan -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div class="bg-white p-3.5 rounded-2xl border shadow-xs">
+                <span class="text-[10px] text-slate-400 font-bold block uppercase"><i class="fa-solid fa-users text-blue-500 mr-1"></i> Total Pelanggan</span>
+                <span class="text-lg font-black text-slate-800" x-text="customers.length">0</span>
+              </div>
+              <div class="bg-white p-3.5 rounded-2xl border shadow-xs">
+                <span class="text-[10px] text-slate-400 font-bold block uppercase"><i class="fa-solid fa-user-check text-emerald-500 mr-1"></i> Status Aktif</span>
+                <span class="text-lg font-black text-emerald-600" x-text="customers.filter(c => c.status === 'aktif').length">0</span>
+              </div>
+              <div class="bg-white p-3.5 rounded-2xl border shadow-xs">
+                <span class="text-[10px] text-slate-400 font-bold block uppercase"><i class="fa-solid fa-user-slash text-red-500 mr-1"></i> Diblokir / Suspend</span>
+                <span class="text-lg font-black text-red-500" x-text="customers.filter(c => c.status !== 'aktif').length">0</span>
+              </div>
+              <div class="bg-white p-3.5 rounded-2xl border shadow-xs">
+                <span class="text-[10px] text-slate-400 font-bold block uppercase"><i class="fa-solid fa-wallet text-orange-500 mr-1"></i> Total Saldo Terendap</span>
+                <span class="text-lg font-black text-orange-500" x-text="'Rp ' + customers.reduce((sum, c) => sum + Number(c.saldo||0), 0).toLocaleString('id-ID')">Rp 0</span>
+              </div>
+            </div>
+
+
+            <div class="space-y-4">
+              <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                <div>
+                  <h3 class="text-sm font-black text-slate-800">👥 Data Pelanggan Terdaftar (Firebase Auth)</h3>
+                  <p class="text-xs text-slate-500">Kelola akun, saldo, status verifikasi, dan pantau aktivitas pengguna terdaftar.</p>
+                </div>
+                
+                <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                  <select x-model="customerStatusFilter" class="p-2 bg-white border rounded-xl text-xs font-bold outline-none cursor-pointer">
+                    <option value="all">🌐 Semua Status</option>
+                    <option value="aktif">✅ Aktif</option>
+                    <option value="suspend">🚫 Diblokir</option>
+                  </select>
+
+                  <input type="text" x-model="searchCustomer" placeholder="🔍 Cari Nama / No HP / Email / UID..." class="flex-1 md:w-60 p-2 bg-white border rounded-xl text-xs outline-none">
+                </div>
+              </div>
+
+              <!-- Grid Kartu Pelanggan -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <template x-for="c in filteredCustomers" :key="c.uid || c.id">
+                  <div class="bg-white p-3.5 rounded-2xl border shadow-xs flex items-center gap-3 hover:border-emerald-400 transition-all">
+                    <img :src="c.foto || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80'" class="w-12 h-12 bg-slate-100 rounded-full object-cover shrink-0 border">
+                    <div class="flex-1 min-w-0">
+                      <h4 class="text-xs font-black text-slate-800 truncate" x-text="c.nama"></h4>
+                      <p class="text-[10px] text-slate-400 truncate" x-text="c.email"></p>
+                      <p class="text-xs text-emerald-700 font-bold" x-text="c.no_hp.startsWith('+') ? c.no_hp : '+62 ' + c.no_hp"></p>
+                      <p class="text-xs text-emerald-600 font-black my-1" x-text="'Saldo: Rp ' + Number(c.saldo||0).toLocaleString('id-ID')"></p>
+                      <button @click="toggleCustomerStatus(c.uid || c.id, c.status)" :class="c.status === 'aktif' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-500 text-white animate-pulse'" class="text-[10px] font-black px-2 py-0.5 rounded-lg flex items-center gap-1">
+                        <i :class="c.status === 'aktif' ? 'fa-solid fa-shield-check' : 'fa-solid fa-ban'"></i> 
+                        <span x-text="c.status === 'aktif' ? 'Aktif' : 'Diblokir'"></span>
+                      </button>
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <a :href="'https://wa.me/' + (c.no_hp.startsWith('0') ? '62' + c.no_hp.slice(1) : c.no_hp)" target="_blank" class="text-emerald-600 p-1.5 hover:bg-emerald-50 rounded-lg text-center" title="Chat WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
+                      <button @click="openCustomerModal(c)" class="text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg" title="Edit Data & Detail"><i class="fa-solid fa-pen"></i></button>
+                      <button @click="deleteCustomer(c.uid || c.id)" class="text-red-500 p-1.5 hover:bg-red-50 rounded-lg" title="Hapus Pelanggan"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="filteredCustomers.length === 0">
+                  <div class="col-span-full bg-white p-6 rounded-2xl border text-center text-slate-400 text-xs italic">
+                    Belum ada data pelanggan terdaftar yang sesuai.
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 6: MITRA / TOKO -->
+          <div x-show="activeTab === 'merchants'" x-cloak class="space-y-6">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              <div>
+                <h3 class="text-sm font-black text-slate-800">🏪 Kelola Toko & Mitra SiapJek</h3>
+                <p class="text-xs text-slate-500">Daftar toko dipisah dengan tampilan kotak grid segi empat.</p>
+              </div>
+              <div class="flex items-center gap-2 w-full md:w-auto">
+                <input type="text" x-model="searchMerchant" placeholder="🔍 Cari Toko..." class="w-full md:w-60 p-2 bg-white border rounded-xl text-xs outline-none">
+                <button @click="openMerchantModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0">+ Tambah Toko</button>
+              </div>
+            </div>
+
+            <!-- TOKO MITRA -->
+            <div class="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-200 space-y-3">
+              <div class="flex justify-between items-center border-b border-emerald-200 pb-2">
+                <h4 class="text-xs font-black text-emerald-900 flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-600"></i> TOKO MITRA RESMI</h4>
+                <span class="text-[10px] font-black bg-emerald-600 text-white px-2.5 py-0.5 rounded-full" x-text="filteredMerchants.filter(m => m.is_mitra !== false && m.kategori !== 'Motor' && m.kategori !== 'Jastip').length + ' Toko'"></span>
+              </div>
+
+              <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                <template x-for="m in filteredMerchants.filter(m => m.is_mitra !== false && m.kategori !== 'Motor' && m.kategori !== 'Jastip')" :key="m.id">
+                  <div class="bg-white rounded-2xl border border-emerald-100 shadow-2xs p-2.5 flex flex-col justify-between group relative overflow-hidden transition-all"
+                       :class="!m.is_open ? 'opacity-60 grayscale border-red-300' : 'hover:border-emerald-500'">
+                    <div>
+                      <div class="w-full h-32 rounded-xl overflow-hidden bg-slate-50 relative mb-2 border border-slate-100">
+                        <img :src="m.foto_toko || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=200&auto=format&fit=crop&q=80'" class="w-full h-full object-cover group-hover:scale-105 transition-transform">
+                        <span :class="m.is_open ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white animate-pulse'" class="absolute top-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded uppercase" x-text="m.is_open ? 'BUKA' : 'TUTUP'"></span>
+                      </div>
+                      <div class="px-0.5">
+                        <h5 class="text-xs font-black text-slate-800 line-clamp-1" x-text="m.nama_toko"></h5>
+                        <p class="text-[10px] text-slate-400 line-clamp-1 mt-0.5" x-text="m.alamat_lengkap || '-'"></p>
+                        <div class="flex items-center gap-1 mt-1">
+                          <span class="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded" x-text="m.kategori"></span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-100">
+                      <button @click="toggleMerchantStatus(m.id, m.is_open)" :class="m.is_open ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'" class="h-8 px-2 rounded-lg text-[10px] font-bold" :title="m.is_open ? 'Tutup Toko' : 'Buka Toko'">
+                        <i :class="m.is_open ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i>
+                      </button>
+                      <button @click="openMerchantModal(m)" class="flex-1 h-8 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-pen text-[10px]"></i> Edit
+                      </button>
+                      <button @click="deleteMerchant(m.id)" class="w-8 h-8 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg text-xs font-bold flex items-center justify-center">
+                        <i class="fa-solid fa-trash text-[10px]"></i>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+                
+                <template x-if="filteredMerchants.filter(m => m.is_mitra !== false && m.kategori !== 'Motor' && m.kategori !== 'Jastip').length === 0">
+                  <div class="col-span-full bg-white p-6 rounded-2xl border text-center text-slate-400 text-xs italic">
+                    Belum ada toko mitra.
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- TOKO NON-MITRA -->
+            <div class="bg-purple-50/40 p-4 rounded-2xl border border-purple-200 space-y-3">
+              <div class="flex justify-between items-center border-b border-purple-200 pb-2">
+                <h4 class="text-xs font-black text-purple-900 flex items-center gap-1.5"><i class="fa-solid fa-store text-purple-600"></i> TOKO NON-MITRA (BELANJA)</h4>
+                <span class="text-[10px] font-black bg-purple-600 text-white px-2.5 py-0.5 rounded-full" x-text="filteredMerchants.filter(m => m.is_mitra === false && m.kategori !== 'Motor' && m.kategori !== 'Jastip').length + ' Toko'"></span>
+              </div>
+
+              <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                <template x-for="m in filteredMerchants.filter(m => m.is_mitra === false && m.kategori !== 'Motor' && m.kategori !== 'Jastip')" :key="m.id">
+                  <div class="bg-white rounded-2xl border border-purple-100 shadow-2xs p-2.5 flex flex-col justify-between group relative overflow-hidden transition-all"
+                       :class="!m.is_open ? 'opacity-60 grayscale border-red-300' : 'hover:border-purple-500'">
+                    <div>
+                      <div class="w-full h-32 rounded-xl overflow-hidden bg-slate-50 relative mb-2 border border-slate-100">
+                        <img :src="m.foto_toko || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=200&auto=format&fit=crop&q=80'" class="w-full h-full object-cover group-hover:scale-105 transition-transform">
+                        <span :class="m.is_open ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white animate-pulse'" class="absolute top-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded uppercase" x-text="m.is_open ? 'BUKA' : 'TUTUP'"></span>
+                      </div>
+                      <div class="px-0.5">
+                        <h5 class="text-xs font-black text-slate-800 line-clamp-1" x-text="m.nama_toko"></h5>
+                        <p class="text-[10px] text-slate-400 line-clamp-1 mt-0.5" x-text="m.alamat_lengkap || '-'"></p>
+                        <div class="flex items-center gap-1 mt-1">
+                          <span class="text-[9px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.5 rounded" x-text="m.kategori"></span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-100">
+                      <button @click="toggleMerchantStatus(m.id, m.is_open)" :class="m.is_open ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'" class="h-8 px-2 rounded-lg text-[10px] font-bold" :title="m.is_open ? 'Tutup Toko' : 'Buka Toko'">
+                        <i :class="m.is_open ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i>
+                      </button>
+                      <button @click="openMerchantModal(m)" class="flex-1 h-8 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
+                        <i class="fa-solid fa-pen text-[10px]"></i> Edit
+                      </button>
+                      <button @click="deleteMerchant(m.id)" class="w-8 h-8 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg text-xs font-bold flex items-center justify-center">
+                        <i class="fa-solid fa-trash text-[10px]"></i>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+
+                <template x-if="filteredMerchants.filter(m => m.is_mitra === false && m.kategori !== 'Motor' && m.kategori !== 'Jastip').length === 0">
+                  <div class="col-span-full bg-white p-6 rounded-2xl border text-center text-slate-400 text-xs italic">
+                    Belum ada toko non-mitra.
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 7: KELOLA PRODUK -->
+          <div x-show="activeTab === 'products'" x-cloak class="space-y-6">
+            <template x-if="!selectedProductMerchant">
+              <div class="space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                  <div>
+                    <h3 class="text-sm font-black text-slate-800">🍔 Kelola Produk Berdasarkan Toko</h3>
+                    <p class="text-xs text-slate-500">Pilih toko di bawah untuk mengelola menu / produknya.</p>
+                  </div>
+                  <button @click="openProductModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shrink-0">+ Tambah Produk</button>
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <template x-for="m in merchants.filter(m => m.kategori !== 'Motor' && m.kategori !== 'Jastip')" :key="m.id">
+                    <div @click="selectedProductMerchant = m" class="bg-white p-4 rounded-2xl border shadow-xs hover:border-emerald-500 hover:shadow-md cursor-pointer transition-all flex items-center gap-3 group">
+                      <img :src="m.foto_toko || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=100&auto=format&fit=crop&q=80'" class="w-14 h-14 rounded-xl object-cover border group-hover:scale-105 transition-transform">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5">
+                          <h4 class="text-xs font-black text-slate-800 truncate group-hover:text-emerald-700" x-text="m.nama_toko"></h4>
+                          <span :class="m.is_open ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'" class="text-[8px] font-bold px-1.5 py-0.5 rounded" x-text="m.is_open ? 'Buka' : 'Tutup'"></span>
+                        </div>
+                        <span class="text-xs bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full inline-block mt-1" x-text="m.kategori"></span>
+                        <p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-box mr-1"></i> <span x-text="products.filter(p => p.toko_id === m.id).length"></span> Produk</p>
+                      </div>
+                      <i class="fa-solid fa-chevron-right text-slate-300 group-hover:text-emerald-600 mr-2"></i>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="selectedProductMerchant">
+              <div class="space-y-4">
+                <div class="flex items-center justify-between bg-white p-4 rounded-2xl border shadow-xs">
+                  <div class="flex items-center gap-3">
+                    <button @click="selectedProductMerchant = null" class="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center font-bold transition-colors"><i class="fa-solid fa-arrow-left"></i></button>
+                    <img :src="selectedProductMerchant.foto_toko || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=100&auto=format&fit=crop&q=80'" class="w-10 h-10 rounded-lg object-cover border">
+                    <div>
+                      <div class="flex items-center gap-1.5">
+                        <h4 class="text-xs font-black text-slate-800" x-text="selectedProductMerchant.nama_toko"></h4>
+                        <span :class="selectedProductMerchant.is_open ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'" class="text-[9px] font-bold px-1.5 py-0.5 rounded" x-text="selectedProductMerchant.is_open ? 'Buka' : 'Tutup'"></span>
+                      </div>
+                      <span class="text-xs text-slate-500" x-text="selectedProductMerchant.kategori"></span>
+                    </div>
+                  </div>
+                  <button @click="openProductModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0">+ Tambah Produk</button>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  <template x-for="p in products.filter(p => p.toko_id === selectedProductMerchant.id)" :key="p.id">
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs p-2 flex flex-col justify-between group relative overflow-hidden hover:border-emerald-500 transition-all">
+                      <div>
+                        <div class="w-full h-32 rounded-xl overflow-hidden bg-slate-50 relative mb-2 border border-slate-100">
+                          <img :src="p.foto_produk || 'https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=200&auto=format&fit=crop&q=80'" class="w-full h-full object-cover group-hover:scale-105 transition-transform">
+                          <div class="absolute bottom-1 left-1 bg-emerald-700/90 text-white text-[11px] font-black px-2 py-0.5 rounded-lg">
+                            <span x-text="'Rp ' + Number(p.harga || 0).toLocaleString('id-ID')"></span>
+                          </div>
+                          <template x-if="p.is_promo">
+                            <span class="absolute top-1 left-1 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded uppercase">PROMO</span>
+                          </template>
+                        </div>
+                        <div class="px-0.5 space-y-1">
+                          <h4 class="text-xs font-black text-slate-800 line-clamp-2 leading-tight" x-text="p.nama_produk"></h4>
+                          <p class="text-[10px] text-slate-400 line-clamp-1" x-text="p.deskripsi || 'Tidak ada deskripsi'"></p>
+                          <template x-if="p.variations && p.variations.length > 0">
+                            <div class="pt-1">
+                              <span class="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded" x-text="p.variations.length + ' Varian'"></span>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                      
+                      <div class="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-100">
+                        <button @click="openProductModal(p)" class="flex-1 h-8 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center justify-center gap-1">
+                          <i class="fa-solid fa-pen text-[10px]"></i> Edit
+                        </button>
+                        <button @click="deleteProduct(p.toko_id, p.id)" class="w-8 h-8 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg text-xs font-bold flex items-center justify-center">
+                          <i class="fa-solid fa-trash text-[10px]"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template x-if="products.filter(p => p.toko_id === selectedProductMerchant.id).length === 0">
+                    <div class="col-span-full bg-white p-8 rounded-2xl border text-center text-slate-400 text-xs italic">
+                      Belum ada produk untuk toko ini.
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- TAB 8: DRIVERS -->
+          <div x-show="activeTab === 'drivers'" x-cloak class="space-y-4">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              <h3 class="text-sm font-black text-slate-800">🛵 Kelola Driver & Suspend</h3>
+              <div class="flex gap-2 w-full md:w-auto">
+                <input type="text" x-model="searchDriver" placeholder="🔍 Cari Driver..." class="w-full p-2 bg-white border rounded-xl text-xs outline-none">
+                <button @click="openDriverAccountModal()" class="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0"><i class="fa-solid fa-user-plus mr-1"></i> Daftarkan Akun</button>
+                <button @click="openDriverModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-xl shrink-0">+ Data Driver</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <template x-for="d in filteredDrivers" :key="d.id">
+                <div class="bg-white p-3.5 rounded-2xl border shadow-xs flex items-center gap-3 hover:border-emerald-400 transition-all">
+                  <img :src="d.foto || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'" class="w-14 h-14 rounded-full object-cover shrink-0 border">
+                  <div class="flex-1 min-w-0 space-y-0.5">
+                    <h4 class="text-xs font-black text-slate-800 truncate" x-text="d.nama"></h4>
+                    <p class="text-[11px] text-emerald-700 font-bold truncate" x-text="(d.merk_motor || '') + ' ' + (d.nama_motor || '')"></p>
+                    <p class="text-[10px] text-slate-600 font-medium truncate" x-text="'Warna: ' + (d.warna_motor || 'Belum diisi')"></p>
+                    <p class="text-[10px] text-slate-500 font-medium truncate" x-text="'Plat: ' + (d.plat_nomor || '-')"></p>
+                    <p class="text-[10px] text-blue-700 font-semibold break-all" x-text="'Email: ' + (d.email || 'Belum terhubung')"></p>
+                    <p class="text-[9px] text-slate-400">Sandi tidak disimpan di panel demi keamanan.</p>
+                    <div class="flex items-center gap-1 pt-1"><span class="text-[9px] bg-orange-100 text-orange-700 font-black px-1.5 py-0.5 rounded truncate" x-text="'ID: ' + d.id"></span></div>
+                    <div class="pt-1">
+                      <button @click="toggleDriverStatus(d.id, d.status)" :class="d.status === 'aktif' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-500 text-white animate-pulse'" class="text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1"><i :class="d.status === 'aktif' ? 'fa-solid fa-shield-check' : 'fa-solid fa-ban'"></i> <span x-text="d.status === 'aktif' ? 'Aktif' : 'Tersuspend'"></span></button>
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1.5"><button @click="openDriverModal(d)" class="text-blue-600 p-1.5 hover:bg-blue-50 rounded-lg"><i class="fa-solid fa-pen"></i></button><button @click="deleteDriver(d.id)" class="text-red-500 p-1.5 hover:bg-red-50 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- TAB 9: KEUANGAN -->
+          <div x-show="activeTab === 'finance'" x-cloak class="space-y-6">
+            <div class="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 class="text-sm font-black text-slate-800">💰 Pusat Pengelolaan Keuangan & Saldo</h3>
+                <p class="text-xs text-slate-500">Kelola permohonan penarikan, pengisian saldo, dan mutasi transaksi secara terpusat.</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              
+              <!-- 1. Antrean Tarik Dana (Withdrawal) -->
+              <div class="bg-white p-5 rounded-2xl border shadow-xs flex flex-col h-[320px]">
+                <div class="flex justify-between items-center border-b pb-2 mb-3 shrink-0">
+                   <h4 class="text-xs font-black text-slate-800 flex items-center gap-1.5"><i class="fa-solid fa-money-bill-transfer text-orange-500"></i> Antrean Tarik Dana</h4>
+                   <span class="text-xs bg-red-100 text-red-600 font-bold px-2.5 py-0.5 rounded-full" x-text="pendingWithdrawals.length + ' Menunggu'"></span>
+                </div>
+                <div class="space-y-2 overflow-y-auto flex-1 pr-1 no-scrollbar">
+                   <template x-if="pendingWithdrawals.length === 0"><div class="h-full flex items-center justify-center text-slate-400 text-xs italic">Tidak ada permohonan penarikan dana.</div></template>
+                   <template x-for="w in pendingWithdrawals" :key="w.id">
+                      <div class="bg-slate-50 border p-3 rounded-xl flex justify-between items-center gap-2">
+                         <div class="text-xs min-w-0 flex-1">
+                           <span class="font-bold text-slate-800 truncate block" x-text="w.user_nama || w.user_id"></span>
+                           <p class="font-black text-orange-600 mt-0.5" x-text="'Tarik: Rp ' + Number(w.nominal).toLocaleString('id-ID')"></p>
+                           <p class="text-[10px] text-slate-500 truncate mt-0.5" x-text="w.info_rekening"></p>
+                         </div>
+                         <div class="flex gap-1.5 shrink-0">
+                           <button @click="approveWithdrawal(w)" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">Setujui</button>
+                           <button @click="rejectWithdrawal(w)" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">Tolak</button>
+                         </div>
+                      </div>
+                   </template>
+                </div>
+              </div>
+
+              <!-- 2. Antrean Top-Up -->
+              <div class="bg-white p-5 rounded-2xl border shadow-xs flex flex-col h-[320px]">
+                <div class="flex justify-between items-center border-b pb-2 mb-3 shrink-0">
+                   <h4 class="text-xs font-black text-slate-800 flex items-center gap-1.5"><i class="fa-solid fa-wallet text-emerald-600"></i> Antrean Permohonan Top-Up Saldo</h4>
+                   <span class="text-xs bg-emerald-100 text-emerald-700 font-bold px-2.5 py-0.5 rounded-full" x-text="pendingTopups.length + ' Menunggu'"></span>
+                </div>
+                <div class="space-y-2 overflow-y-auto flex-1 pr-1 no-scrollbar">
+                   <template x-if="pendingTopups.length === 0"><div class="h-full flex items-center justify-center text-slate-400 text-xs italic">Tidak ada permohonan konfirmasi top-up.</div></template>
+                   <template x-for="t in pendingTopups" :key="t.id">
+                      <div class="bg-slate-50 border p-3 rounded-xl flex justify-between items-center gap-2">
+                         <div class="text-xs min-w-0 flex-1">
+                           <div class="flex items-center gap-1 truncate"><span class="font-bold text-slate-800 truncate" x-text="t.user_nama || getCustomerName(t.user_id) || t.user_id"></span></div>
+                           <p class="font-black text-emerald-600 mt-0.5" x-text="'Isi Saldo: Rp ' + Number(t.nominal).toLocaleString('id-ID')"></p>
+                           <p class="text-[10px] text-slate-500 truncate mt-0.5" x-text="t.metode ? 'Metode: ' + t.metode : 'Pembayaran Transfer'"></p>
+                         </div>
+                         <div class="flex gap-1.5 shrink-0">
+                           <button @click="approveTopUp(t)" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">Setujui</button>
+                           <button @click="rejectTopUp(t)" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">Tolak</button>
+                         </div>
+                      </div>
+                   </template>
+                </div>
+              </div>
+
+              <!-- 3. Form Top Up Manual Saldo -->
+              <div class="bg-white p-5 rounded-2xl border shadow-xs flex flex-col justify-between h-[320px]">
+                <div>
+                  <h4 class="text-xs font-black text-slate-800 mb-3 border-b pb-2 flex items-center gap-1.5"><i class="fa-solid fa-hand-holding-dollar text-blue-600"></i> Form Top-Up Saldo Manual</h4>
+                  <div class="space-y-3 text-xs">
+                    <div><label class="font-bold text-slate-600 block mb-1">Target Pengguna (UID Pelanggan / DRV_ID / TOKO_ID):</label><input type="text" x-model="topUpForm.target_id" placeholder="Masukkan UID Pelanggan / DRV_ID" class="w-full p-2.5 bg-slate-50 border rounded-xl text-orange-600 font-bold outline-none focus:border-blue-500"></div>
+                    <div><label class="font-bold text-slate-600 block mb-1">Nominal Saldo Ditambahkan (Rp):</label><input type="number" x-model.number="topUpForm.nominal" placeholder="0" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold outline-none focus:border-blue-500"></div>
+                  </div>
+                </div>
+                <button @click="prosesTopUp()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl shadow-md transition-all text-xs flex items-center justify-center gap-1.5">
+                  <i class="fa-solid fa-paper-plane"></i> Kirim Saldo Manual Sekarang
+                </button>
+              </div>
+
+              <!-- 4. Riwayat Mutasi Saldo -->
+              <div class="bg-white p-5 rounded-2xl border shadow-xs flex flex-col h-[320px]">
+                <h4 class="text-xs font-black text-slate-800 mb-3 border-b pb-2 flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-clock-rotate-left text-purple-600"></i> Riwayat Mutasi Saldo Terbaru</h4>
+                <div class="space-y-2 overflow-y-auto flex-1 pr-1 no-scrollbar">
+                  <template x-if="mutasiSaldo.length === 0"><div class="h-full flex items-center justify-center text-slate-400 text-xs italic">Belum ada riwayat mutasi.</div></template>
+                  <template x-for="mut in mutasiSaldo" :key="mut.id">
+                    <div class="bg-slate-50 p-2.5 rounded-xl border flex justify-between items-center text-xs">
+                      <div class="min-w-0 flex-1 pr-2"><span class="font-bold text-slate-800 block truncate" x-text="getCustomerName(mut.user_id) || mut.user_id"></span><span class="text-[10px] text-slate-400 truncate block" x-text="mut.keterangan"></span></div>
+                      <div class="text-right shrink-0"><span :class="mut.jenis === 'IN' ? 'text-emerald-600' : 'text-red-500'" class="font-black block text-xs" x-text="(mut.jenis === 'IN' ? '+ ' : '- ') + Number(mut.nominal || 0).toLocaleString('id-ID')"></span><span class="text-[9px] text-slate-400 block" x-text="new Date(mut.timestamp).toLocaleTimeString()"></span></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- TAB 10: EDITOR KODE APLIKASI -->
+          <div x-show="activeTab === 'code_editor'" x-cloak class="space-y-6">
+            <div class="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 class="text-sm font-black text-slate-800">💻 Panel Editor & Sinkronisasi Kode Aplikasi</h3>
+                <p class="text-xs text-slate-500">Ubah, unggah file, unduh file, dan perbarui kode sumber HTML aplikasi secara terpusat di database.</p>
+              </div>
+            </div>
+
+            <!-- Editor Pelanggan -->
+            <div class="bg-white p-5 rounded-2xl border shadow-xs space-y-3">
+              <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div>
+                  <h4 class="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <i class="fa-solid fa-file-code text-blue-600"></i> Kode HTML Pelanggan
+                  </h4>
+                  <p class="text-[11px] text-emerald-600 font-bold mt-0.5">
+                    File Aktif: <span class="underline" x-text="appFileNames.pelanggan || 'PELANGGNJA.html'"></span>
+                  </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button @click="downloadAppCode('pelanggan')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors shadow-2xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> Unduh File
+                  </button>
+                  <label class="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-upload"></i> Unggah File HTML
+                    <input type="file" accept=".html,.htm" @change="loadCodeFromFile($event, 'pelanggan')" class="hidden">
+                  </label>
+                  <button @click="saveAppCode('pelanggan')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm">
+                    💾 Simpan Pelanggan
+                  </button>
+                </div>
+              </div>
+              <textarea x-model="appCodes.pelanggan" rows="10" class="w-full p-3 bg-slate-900 text-emerald-400 font-mono text-xs rounded-xl outline-none" placeholder="Tempel atau unggah file HTML pelanggan di sini..."></textarea>
+            </div>
+
+            <!-- Editor Driver -->
+            <div class="bg-white p-5 rounded-2xl border shadow-xs space-y-3">
+              <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div>
+                  <h4 class="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <i class="fa-solid fa-motorcycle text-orange-500"></i> Kode HTML Driver
+                  </h4>
+                  <p class="text-[11px] text-emerald-600 font-bold mt-0.5">
+                    File Aktif: <span class="underline" x-text="appFileNames.driver || 'DRIVER.html'"></span>
+                  </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button @click="downloadAppCode('driver')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors shadow-2xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> Unduh File
+                  </button>
+                  <label class="bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-upload"></i> Unggah File HTML
+                    <input type="file" accept=".html,.htm" @change="loadCodeFromFile($event, 'driver')" class="hidden">
+                  </label>
+                  <button @click="saveAppCode('driver')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm">
+                    💾 Simpan Driver
+                  </button>
+                </div>
+              </div>
+              <textarea x-model="appCodes.driver" rows="10" class="w-full p-3 bg-slate-900 text-orange-400 font-mono text-xs rounded-xl outline-none" placeholder="Tempel atau unggah file HTML driver di sini..."></textarea>
+            </div>
+
+            <!-- Editor Mitra -->
+            <div class="bg-white p-5 rounded-2xl border shadow-xs space-y-3">
+              <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div>
+                  <h4 class="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <i class="fa-solid fa-store text-purple-600"></i> Kode HTML Mitra
+                  </h4>
+                  <p class="text-[11px] text-emerald-600 font-bold mt-0.5">
+                    File Aktif: <span class="underline" x-text="appFileNames.mitra || 'MITRA.html'"></span>
+                  </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button @click="downloadAppCode('mitra')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors shadow-2xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> Unduh File
+                  </button>
+                  <label class="bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold px-3 py-2 rounded-xl cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-upload"></i> Unggah File HTML
+                    <input type="file" accept=".html,.htm" @change="loadCodeFromFile($event, 'mitra')" class="hidden">
+                  </label>
+                  <button @click="saveAppCode('mitra')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-sm">
+                    💾 Simpan Mitra
+                  </button>
+                </div>
+              </div>
+              <textarea x-model="appCodes.mitra" rows="10" class="w-full p-3 bg-slate-900 text-purple-400 font-mono text-xs rounded-xl outline-none" placeholder="Tempel atau unggah file HTML mitra di sini..."></textarea>
+            </div>
+          </div>
+
+          <!-- TAB 11: PENGATURAN -->
+          <div x-show="activeTab === 'settings'" x-cloak class="space-y-4">
+            <h3 class="text-sm font-black text-slate-800">⚙️ Aturan & Tarif Sistem SiapJek</h3>
+            
+            <!-- PEMBERSIH DATABASE -->
+            <div class="bg-white p-5 rounded-2xl border border-red-200 shadow-sm space-y-3 max-w-2xl">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center text-lg shrink-0">
+                  <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                  <h4 class="text-xs font-black text-slate-800">Zona Bahaya: Pembersihan Database Otomatis</h4>
+                  <p class="text-[11px] text-slate-500">Hapus seluruh riwayat pesanan, chat, mutasi saldo, top-up, penarikan, dan log secara permanen untuk mengosongkan database.</p>
+                </div>
+              </div>
+              
+              <button @click="bersihkanSeluruhDatabaseFirebase()" class="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-black py-3 rounded-xl shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                <i class="fa-solid fa-trash-can"></i> Hapus Permanen Semua Riwayat & Chat di Database
+              </button>
+            </div>
+
+            <!-- MODE PEMELIHARAAN -->
+            <div class="bg-orange-50 border border-orange-200 p-5 rounded-2xl shadow-xs max-w-2xl space-y-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h4 class="text-xs font-black text-orange-900"><i class="fa-solid fa-triangle-exclamation text-orange-600 mr-1"></i> Mode Pemeliharaan (Maintenance Mode)</h4>
+                  <p class="text-[11px] text-orange-700 mt-0.5">Aktifkan untuk mengunci total seluruh aplikasi saat pembaruan sistem.</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" x-model="maintenanceActive" @change="saveMaintenance()" class="sr-only peer">
+                  <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                </label>
+              </div>
+              <div class="space-y-1 pt-2 border-t border-orange-200 text-xs">
+                <label class="font-bold text-orange-900 block">Pesan Pemeliharaan untuk Pengguna:</label>
+                <textarea x-model="maintenanceMessage" rows="2" class="w-full p-2.5 bg-white border border-orange-200 rounded-xl font-bold outline-none text-slate-800" placeholder="Tulis alasan perbaikan sistem..."></textarea>
+              </div>
+              <button @click="saveMaintenance()" class="w-full bg-orange-600 hover:bg-orange-700 text-white text-xs font-black py-2.5 rounded-xl shadow-xs">Perbarui Status Maintenance</button>
+            </div>
+
+            <!-- KONTROL FITUR SALDO PELANGGAN -->
+            <div class="bg-white p-5 rounded-2xl border shadow-xs max-w-2xl space-y-4">
+              <h4 class="text-xs font-black text-slate-800 border-b pb-2 flex items-center gap-1.5">
+                <i class="fa-solid fa-wallet text-emerald-600"></i> Kontrol Fitur Saldo Aplikasi Pelanggan
+              </h4>
+
+              <div class="bg-slate-50 p-4 rounded-xl border space-y-4">
+                <div class="flex items-center justify-between border-b pb-3">
+                  <div>
+                    <h5 class="text-xs font-black text-slate-800">💳 Buka Fitur Isi Saldo (Top-Up)</h5>
+                    <p class="text-[11px] text-slate-500">Jika dimatikan, menu isi saldo di aplikasi pelanggan terkunci.</p>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" x-model="systemSettings.buka_fitur_topup_pelanggan" class="sr-only peer">
+                    <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                <div class="flex items-center justify-between border-b pb-3">
+                  <div>
+                    <h5 class="text-xs font-black text-slate-800">💸 Buka Fitur Tarik Saldo</h5>
+                    <p class="text-[11px] text-slate-500">Jika dimatikan, menu tarik saldo di aplikasi pelanggan terkunci.</p>
+                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" x-model="systemSettings.buka_fitur_tarik_pelanggan" class="sr-only peer">
+                    <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                <div class="space-y-1 pt-1">
+                  <label class="text-xs font-bold text-slate-700 block">Pesan Keterangan Saat Fitur Dikunci:</label>
+                  <input type="text" x-model="systemSettings.pesan_fitur_saldo" class="w-full p-2.5 bg-white border rounded-xl text-xs font-medium outline-none text-slate-800" placeholder="Fitur belum bisa digunakan">
+                </div>
+
+              </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-2xl border shadow-xs max-w-2xl space-y-5">
+              
+              <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <h4 class="text-xs font-black text-slate-800 flex items-center gap-1.5"><i class="fa-solid fa-motorcycle text-orange-500"></i> Pengaturan Tarif Ojek Motor</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div><label class="font-bold block mb-1">Tarif Dasar Motor (Rp):</label><input type="number" x-model.number="systemSettings.tarif_dasar_motor" class="w-full p-2.5 bg-white border rounded-xl font-bold"></div>
+                  <div><label class="font-bold block mb-1">Tarif Per KM Motor (Rp):</label><input type="number" x-model.number="systemSettings.tarif_per_km_motor" class="w-full p-2.5 bg-white border rounded-xl font-bold"></div>
+                </div>
+              </div>
+
+              <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <h4 class="text-xs font-black text-slate-800 flex items-center gap-1.5"><i class="fa-solid fa-bag-shopping text-purple-600"></i> Pengaturan Tarif Jastip</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div><label class="font-bold block mb-1">Tarif Dasar Jastip (Rp):</label><input type="number" x-model.number="systemSettings.tarif_dasar_jastip" class="w-full p-2.5 bg-white border rounded-xl font-bold"></div>
+                  <div><label class="font-bold block mb-1">Tarif Per KM Jastip (Rp):</label><input type="number" x-model.number="systemSettings.tarif_per_km_jastip" class="w-full p-2.5 bg-white border rounded-xl font-bold"></div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
+                <div><label class="font-bold block mb-1">Nomor WhatsApp Admin:</label><input type="text" x-model="systemSettings.admin_wa" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold"></div>
+                <div><label class="font-bold block mb-1">Potongan Komisi Sistem (%):</label><input type="number" x-model.number="systemSettings.komisi_persen" class="w-full p-2.5 bg-slate-50 border rounded-xl text-red-600 font-bold"></div>
+                <div><label class="font-bold block mb-1">Jarak Maksimal Notif (KM):</label><input type="number" x-model.number="systemSettings.radius_km" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold"></div>
+                <div><label class="font-bold block mb-1">Saldo Minimal Driver (Rp):</label><input type="number" x-model.number="systemSettings.min_saldo_driver" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold"></div>
+                <div><label class="font-bold block mb-1">Saldo Minimal Mitra (Rp):</label><input type="number" x-model="systemSettings.min_saldo_mitra" class="w-full p-2.5 bg-slate-50 border rounded-xl font-bold"></div>
+              </div>
+
+              <div class="pt-2 border-t mt-2">
+                 <button @click="saveSystemSettings()" class="w-full md:w-auto px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl shadow-md">Simpan Pengaturan Tarif</button>
+              </div>
+
+            </div>
+          </div>
+        </main>
+
+        <!-- MODALS -->
+
+        <!-- Modal Toko (DITAMBAHKAN TOMBOL GPS) -->
+        <div x-show="showMerchantModal" @click.self="showMerchantModal = false" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-lg rounded-2xl p-4 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-2"><h3 class="text-xs font-black">🏪 Form Toko + Google Maps</h3><button @click="showMerchantModal = false" class="text-slate-400 font-bold hover:text-red-500">✕</button></div>
+            <div class="space-y-2 text-xs">
+              <div class="bg-orange-50 border border-orange-200 p-2.5 rounded-xl space-y-1"><label class="font-bold text-orange-800 text-xs block">ID Toko:</label><input readonly :value="merchantForm.id" class="w-full bg-white border font-black text-orange-600 px-2 py-1.5 rounded-lg text-center outline-none"></div>
+              <div><label class="font-bold">Nama Toko / Lapak:</label><input type="text" x-model="merchantForm.nama_toko" class="w-full p-2 bg-slate-50 border rounded-xl mt-1"></div>
+              
+              <div>
+                <label class="font-bold">Kategori Toko:</label>
+                <select x-model="merchantForm.kategori" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold text-emerald-800">
+                  <option value="Makanan">Makanan</option>
+                  <option value="Minuman">Minuman</option>
+                  <option value="Market">Market</option>
+                  <option value="Pasar Samuda">🛒 Pasar Samuda</option>
+                  <option value="Travel">Travel</option>
+                </select>
+              </div>
+
+              <div x-show="merchantForm.is_mitra === true" x-cloak class="bg-orange-50 border border-orange-200 p-3 rounded-xl space-y-2">
+                <div class="font-black text-orange-800">🔐 Akun Toko Mitra</div>
+                <p class="text-[10px] text-orange-700">Khusus Toko Mitra. Akun dibuat di Firebase Authentication agar pemilik toko dapat masuk ke aplikasi Mitra. Kata sandi tidak disimpan di database.</p>
+                <div><label class="font-bold">Email Mitra:</label><input type="email" x-model="merchantAccountForm.email" autocomplete="off" placeholder="mitra@email.com" class="w-full p-2 bg-white border rounded-xl mt-1"></div>
+                <div><label class="font-bold">Kata Sandi Awal:</label><input type="password" x-model="merchantAccountForm.password" autocomplete="new-password" placeholder="Minimal 6 karakter" class="w-full p-2 bg-white border rounded-xl mt-1"></div>
+                <p class="text-[10px] text-slate-500" x-show="merchantForm.uid">Akun sudah terhubung ke UID Firebase.</p>
+              </div>
+
+              <!-- Pengaturan Jam Operasional -->
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="font-bold">Jam Buka:</label>
+                  <input type="time" x-model="merchantForm.jam_buka" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold text-emerald-800">
+                </div>
+                <div>
+                  <label class="font-bold">Jam Tutup:</label>
+                  <input type="time" x-model="merchantForm.jam_tutup" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold text-red-700">
+                </div>
+              </div>
+
+              <div class="bg-emerald-50 border p-3 rounded-xl space-y-1.5">
+                <label class="font-bold text-emerald-900 block text-xs">⚙️ Status Toko:</label>
+                <div class="flex gap-3">
+                  <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border flex-1 cursor-pointer">
+                    <input type="radio" name="ismitra" :checked="merchantForm.is_mitra === true" @change="merchantForm.is_mitra = true">
+                    <span>Toko Mitra</span>
+                  </label>
+                  <label class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border flex-1 cursor-pointer">
+                    <input type="radio" name="ismitra" :checked="merchantForm.is_mitra === false" @change="merchantForm.is_mitra = false">
+                    <span>Bukan Mitra</span>
+                  </label>
+                </div>
+              </div>
+              
+              <div>
+                <label class="font-bold">Alamat Peta / Koordinat / Link Google Maps:</label>
+                <div class="relative mt-1 flex items-center gap-1.5">
+                  <input type="text" x-model="merchantForm.alamat_lengkap" placeholder="Ketik nama tempat atau paste koordinat (-2.98, 112.97)..." class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-none text-xs">
+                  
+                  <!-- Tombol Cari -->
+                  <button @click="searchLocation()" type="button" class="px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-sm flex items-center gap-1 shrink-0">
+                    <i class="fa-solid fa-magnifying-glass"></i> Cari
+                  </button>
+
+                  <!-- Tombol GPS Lokasi Saya -->
+                  <button @click="getCurrentLocation()" type="button" :disabled="isLocating" class="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-bold rounded-xl text-xs shadow-sm flex items-center gap-1 shrink-0" title="Ambil Lokasi Perangkat Saat Ini">
+                    <i class="fa-solid" :class="isLocating ? 'fa-spinner fa-spin' : 'fa-location-crosshairs'"></i>
+                    <span x-text="isLocating ? 'Deteksi...' : 'GPS'"></span>
+                  </button>
+                </div>
+              </div>
+
+              <div><label class="font-bold">📍 Peta Google Maps (Geser pin):</label><div id="google-toko-map" class="shadow-sm border mb-2" style="height: 280px; width: 100%;"></div></div>
+
+              <div><label class="font-bold">Foto Toko / Lapak:</label><input type="file" accept="image/*" @change="uploadAndCompressImage($event, merchantForm, 'foto_toko')" class="w-full p-1 bg-slate-50 border rounded-xl mt-1"><template x-if="merchantForm.foto_toko"><img :src="merchantForm.foto_toko" class="w-16 h-16 object-cover rounded-xl mt-2 border"></template></div>
+            </div>
+            <button @click="saveMerchant()" :disabled="isSavingMerchant" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl"><span x-text="isSavingMerchant ? '⏳ Menyimpan...' : 'Simpan Toko / Lapak'"></span></button>
+          </div>
+        </div>
+
+        <!-- Modal Assign Driver -->
+        <div x-show="showAssignModal" @click.self="showAssignModal = false" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3">
+            <div class="flex justify-between items-center border-b pb-2"><h3 class="text-xs font-black">🛵 Pilih Driver untuk Pesanan: <span class="text-orange-600" x-text="selectedOrderForAssign ? selectedOrderForAssign.id : ''"></span></h3><button @click="showAssignModal = false" class="text-slate-400 font-bold hover:text-red-500">✕</button></div>
+            <div class="space-y-2 max-h-60 overflow-y-auto">
+              <template x-if="drivers.filter(d => d.status === 'aktif').length === 0">
+                <div class="text-center text-slate-400 text-xs italic py-4">Tidak ada driver aktif saat ini.</div>
+              </template>
+              <template x-for="d in drivers.filter(d => d.status === 'aktif')" :key="d.id">
+                <div class="bg-slate-50 border p-2.5 rounded-xl flex justify-between items-center text-xs">
+                  <div class="flex items-center gap-2">
+                    <img :src="d.foto || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'" class="w-8 h-8 rounded-full object-cover border">
+                    <div>
+                      <h5 class="font-black text-slate-800" x-text="d.nama"></h5>
+                      <p class="text-[10px] text-emerald-700 font-bold" x-text="(d.merk_motor || '') + ' ' + (d.nama_motor || '') + ' (' + (d.plat_nomor || '-') + ')'"></p>
+                      <p class="text-[10px]" :class="isDriverBusy(d.id) ? 'text-amber-600 font-bold' : 'text-slate-500'" x-text="isDriverBusy(d.id) ? '⚠ Sedang Mengantar' : '🟢 Tersedia'"></p>
+                    </div>
+                  </div>
+                  <button @click="assignDriverToOrder(d)" class="text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm" :class="isDriverBusy(d.id) ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'">Pilih</button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal Produk -->
+        <div x-show="showProductModal" @click.self="showProductModal = false" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-2"><h3 class="text-xs font-black">🍔 Form Produk & Varian</h3><button @click="showProductModal = false" class="text-slate-400 font-bold hover:text-red-500">✕</button></div>
+            <div class="space-y-2 text-xs">
+              <div><label class="font-bold">Pemilik / Toko:</label><select x-model="productForm.toko_id" class="w-full p-2 bg-slate-50 border rounded-xl mt-1"><template x-for="m in merchants.filter(m => m.kategori !== 'Motor' && m.kategori !== 'Jastip')" :key="m.id"><option :value="m.id" x-text="m.nama_toko + ' (' + m.kategori + ')'"></option></template></select></div>
+              <div><label class="font-bold">Nama Produk:</label><input type="text" x-model="productForm.nama_produk" placeholder="Contoh: Nasi Goreng Spesial" class="w-full p-2 bg-slate-50 border rounded-xl mt-1"></div>
+              <div><label class="font-bold">Harga Utama (Rp):</label><input type="number" x-model="productForm.harga" placeholder="0" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold text-emerald-700"></div>
+              <div><label class="font-bold">Deskripsi:</label><input type="text" x-model="productForm.deskripsi" placeholder="Penjelasan singkat produk..." class="w-full p-2 bg-slate-50 border rounded-xl mt-1"></div>
+              
+              <div class="bg-slate-50 border rounded-xl p-3 space-y-2 mt-2">
+                <div class="flex items-center justify-between border-b pb-1.5">
+                  <label class="font-black text-slate-800 text-xs flex items-center gap-1">✨ Varian / Pilihan Opsi</label>
+                  <button type="button" @click="addVariantRow()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> Tambah Varian
+                  </button>
+                </div>
+                
+                <div class="space-y-2 max-h-40 overflow-y-auto pr-1 no-scrollbar">
+                  <template x-for="(v, index) in productForm.variations" :key="index">
+                    <div class="flex items-center gap-1.5 bg-white p-2 rounded-xl border border-slate-200">
+                      <input type="text" x-model="v.nama" placeholder="Nama opsi (ex: Jumbo / Pedas)" class="flex-1 p-1.5 bg-slate-50 border rounded-lg text-[11px] outline-none">
+                      <input type="number" x-model.number="v.harga" placeholder="+Harga (Rp)" class="w-24 p-1.5 bg-slate-50 border rounded-lg text-[11px] font-bold text-orange-600 outline-none">
+                      <button type="button" @click="removeVariantRow(index)" class="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-trash text-[10px]"></i>
+                      </button>
+                    </div>
+                  </template>
+
+                  <template x-if="!productForm.variations || productForm.variations.length === 0">
+                    <p class="text-[10px] text-slate-400 text-center py-2 italic">Belum ada varian (Opsional).</p>
+                  </template>
+                </div>
+              </div>
+
+              <div>
+                <label class="font-bold block mb-1">Foto Produk:</label>
+                <input type="file" accept="image/*" @change="uploadAndCompressImage($event, productForm, 'foto_produk')" class="w-full p-1 bg-slate-50 border rounded-xl">
+                <template x-if="productForm.foto_produk">
+                  <div class="mt-2.5">
+                    <span class="text-[10px] text-slate-400 font-bold block mb-1">Preview Produk:</span>
+                    <div class="w-24 h-24 rounded-xl border border-slate-300 overflow-hidden bg-slate-100 shadow-xs">
+                      <img :src="productForm.foto_produk" class="w-full h-full object-cover">
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <div class="flex items-center gap-2 pt-1"><input type="checkbox" x-model="productForm.is_promo" id="promo-chk"><label for="promo-chk" class="font-bold text-slate-600">Status Promo</label></div>
+            </div>
+            
+            <button @click="saveProduct()" :disabled="isSavingProduct" class="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white text-xs font-bold py-2.5 rounded-xl transition-colors">
+              <span x-text="isSavingProduct ? '⏳ Menyimpan...' : 'Simpan Produk'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Modal Daftarkan Akun Driver Firebase Authentication -->
+        <div x-show="showDriverAccountModal" @click.self="showDriverAccountModal = false" x-cloak class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-md rounded-2xl p-5 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 class="text-sm font-black text-slate-800"><i class="fa-solid fa-user-plus text-orange-500 mr-1.5"></i> Daftarkan Akun Driver</h3>
+                <p class="text-[10px] text-slate-500 mt-1">Buat email dan kata sandi untuk login aplikasi driver.</p>
+              </div>
+              <button @click="showDriverAccountModal = false" class="text-slate-400 font-bold hover:text-red-500">✕</button>
+            </div>
+            <form @submit.prevent="registerDriverAccount()" class="space-y-3 text-xs">
+              <div><label class="font-bold text-slate-700">Nama lengkap driver *</label><input type="text" x-model="driverAccountForm.nama" autocomplete="name" required placeholder="Nama driver" class="w-full p-3 bg-slate-50 border rounded-xl mt-1 focus:border-orange-500 outline-none"></div>
+              <div><label class="font-bold text-slate-700">Email login *</label><input type="email" x-model="driverAccountForm.email" autocomplete="email" required placeholder="driver@email.com" class="w-full p-3 bg-slate-50 border rounded-xl mt-1 focus:border-orange-500 outline-none"></div>
+              <div><label class="font-bold text-slate-700">Kata sandi sementara *</label><input type="password" x-model="driverAccountForm.password" autocomplete="new-password" required minlength="6" placeholder="Minimal 6 karakter" class="w-full p-3 bg-slate-50 border rounded-xl mt-1 focus:border-orange-500 outline-none"></div>
+              <div><label class="font-bold text-slate-700">Nomor WhatsApp</label><input type="tel" x-model="driverAccountForm.no_hp" placeholder="08xxxxxxxxxx" class="w-full p-3 bg-slate-50 border rounded-xl mt-1"></div>
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="font-bold text-slate-700">Merk motor</label><input type="text" x-model="driverAccountForm.merk_motor" placeholder="Honda" class="w-full p-3 bg-slate-50 border rounded-xl mt-1"></div>
+                <div><label class="font-bold text-slate-700">Jenis motor</label><input type="text" x-model="driverAccountForm.nama_motor" placeholder="Beat" class="w-full p-3 bg-slate-50 border rounded-xl mt-1"></div>
+              </div>
+              <div><label class="font-bold text-slate-700">Plat nomor</label><input type="text" x-model="driverAccountForm.plat_nomor" placeholder="KH 1234 AB" class="w-full p-3 bg-slate-50 border rounded-xl mt-1"></div>
+              <div class="rounded-xl bg-orange-50 border border-orange-100 p-3 text-[10px] text-orange-800 leading-relaxed">
+                Akun dibuat di Firebase Authentication dan profil disimpan ke <code>drivers</code>. Kata sandi tidak disimpan ke Realtime Database. Pastikan aturan Firebase mengizinkan admin menulis data driver.
+              </div>
+              <button type="submit" :disabled="isRegisteringDriverAccount" class="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-slate-400 text-white font-black py-3 rounded-xl shadow-md">
+                <i class="fa-solid fa-spinner fa-spin mr-1" x-show="isRegisteringDriverAccount"></i>
+                <span x-text="isRegisteringDriverAccount ? 'MEMBUAT AKUN...' : 'BUAT AKUN DRIVER'"></span>
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Modal Driver -->
+        <div x-show="showDriverModal" @click.self="showDriverModal = false" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3">
+            <div class="flex justify-between items-center border-b pb-2"><h3 class="text-xs font-black">🛵 Form Driver & Kendaraan</h3><button @click="showDriverModal = false" class="text-slate-400 font-bold hover:text-red-500">✕</button></div>
+            <div class="space-y-2 text-xs">
+              <div><label class="font-bold">Nama Driver:</label><input type="text" x-model="driverForm.nama" placeholder="Contoh: Ahmad" class="w-full p-2 bg-slate-50 border rounded-xl mt-1"></div>
+              <div><label class="font-bold">No WhatsApp:</label><input type="text" x-model="driverForm.no_hp" placeholder="0812..." class="w-full p-2 bg-slate-50 border rounded-xl mt-1"></div>
+              <div class="grid grid-cols-2 gap-2">
+                <div><label class="font-bold">Merk Motor:</label><input type="text" x-model="driverForm.merk_motor" placeholder="Contoh: Honda / Yamaha" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold"></div>
+                <div><label class="font-bold">Nama/Jenis Motor:</label><input type="text" x-model="driverForm.nama_motor" placeholder="Contoh: Beat / NMax" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold"></div>
+              </div>
+              <div><label class="font-bold">Warna Motor:</label><input type="text" x-model="driverForm.warna_motor" placeholder="Contoh: Hitam / Merah / Putih" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold"><p class="text-[10px] text-slate-500 mt-1">Warna ini akan disimpan ke data driver Firebase untuk ditampilkan di aplikasi pelanggan.</p></div>
+              <div><label class="font-bold">Plat Nomor Kendaraan:</label><input type="text" x-model="driverForm.plat_nomor" placeholder="Contoh: KH 1234 AB" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold text-orange-600"></div>
+              <div><label class="font-bold">Foto Driver:</label><input type="file" accept="image/*" @change="uploadAndCompressImage($event, driverForm, 'foto')" class="w-full p-1 bg-slate-50 border rounded-xl mt-1"><template x-if="driverForm.foto"><img :src="driverForm.foto" class="w-16 h-16 object-cover rounded-xl mt-2 border"></template></div>
+            </div>
+            <button @click="saveDriver()" :disabled="isSavingDriver" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md"><span x-text="isSavingDriver ? '⏳ Menyimpan...' : 'Simpan Driver'"></span></button>
+          </div>
+        </div>
+
+        <!-- Modal Customer -->
+        <div x-show="showCustomerModal" @click.self="showCustomerModal = false" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-md rounded-2xl p-4 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-2">
+              <h3 class="text-xs font-black flex items-center gap-1.5"><i class="fa-solid fa-user-gear text-emerald-600"></i> Detail & Form Pelanggan</h3>
+              <button @click="showCustomerModal = false" class="text-slate-400 font-bold hover:text-red-500">✕</button>
+            </div>
+            
+            <div class="space-y-3 text-xs">
+              <div><label class="font-bold text-slate-500 block">UID Firebase:</label><input type="text" x-model="customerForm.uid" readonly class="w-full p-2 bg-slate-100 border rounded-xl mt-1 text-slate-500 font-mono text-[10px]"></div>
+              <div><label class="font-bold">Nama Lengkap:</label><input type="text" x-model="customerForm.nama" placeholder="Contoh: Budi Santoso" class="w-full p-2 bg-slate-50 border rounded-xl mt-1"></div>
+              <div><label class="font-bold">Email (Auth):</label><input type="email" x-model="customerForm.email" placeholder="email@domain.com" class="w-full p-2 bg-slate-50 border rounded-xl mt-1"></div>
+              <div><label class="font-bold">Nomor WhatsApp:</label><input type="text" x-model="customerForm.no_hp" placeholder="081234567890" class="w-full p-2 bg-slate-50 border rounded-xl mt-1 font-bold text-emerald-700"></div>
+              
+              <!-- Pengelolaan Saldo Cepat -->
+              <div class="bg-orange-50 border border-orange-200 p-3 rounded-xl space-y-2">
+                <div class="flex justify-between items-center">
+                  <label class="font-black text-orange-900 block">Saldo SiapPay Pelanggan:</label>
+                  <span class="font-black text-orange-600 text-sm" x-text="'Rp ' + Number(customerForm.saldo||0).toLocaleString('id-ID')"></span>
+                </div>
+                <input type="number" x-model.number="customerForm.saldo" class="w-full p-2 bg-white border border-orange-300 font-bold text-orange-600 rounded-xl">
+                <div class="flex gap-2 pt-1">
+                  <button type="button" @click="quickAdjustCustomerSaldo(10000)" class="flex-1 bg-emerald-600 text-white font-bold py-1.5 rounded-lg text-[10px] hover:bg-emerald-700">+ Rp 10.000</button>
+                  <button type="button" @click="quickAdjustCustomerSaldo(50000)" class="flex-1 bg-emerald-600 text-white font-bold py-1.5 rounded-lg text-[10px] hover:bg-emerald-700">+ Rp 50.000</button>
+                  <button type="button" @click="quickAdjustCustomerSaldo(-10000)" class="flex-1 bg-red-500 text-white font-bold py-1.5 rounded-lg text-[10px] hover:bg-red-600">- Rp 10.000</button>
+                </div>
+              </div>
+
+              <!-- Ringkasan Riwayat Pesanan Pelanggan -->
+              <div class="border-t pt-2 space-y-1.5">
+                <h4 class="font-black text-slate-800 text-[11px] flex items-center justify-between">
+                  <span>📦 Pesanan Terakhir Pelanggan:</span>
+                  <span class="text-[10px] text-emerald-700 font-bold" x-text="getCustomerOrdersCount(customerForm.uid) + ' Pesanan'"></span>
+                </h4>
+                <div class="max-h-32 overflow-y-auto space-y-1 pr-1 no-scrollbar">
+                  <template x-for="ord in orders.filter(o => o.customer_id === customerForm.uid || o.customer_id === customerForm.id).slice(0, 5)" :key="ord.id">
+                    <div class="bg-slate-50 p-2 rounded-lg border text-[10px] flex justify-between items-center">
+                      <div class="truncate pr-2">
+                        <span class="font-bold text-slate-800 block truncate" x-text="ord.nama_produk"></span>
+                        <span class="text-slate-400" x-text="ord.id"></span>
+                      </div>
+                      <span :class="{'text-emerald-600': ord.status==='selesai', 'text-amber-600': ord.status==='pending'||ord.status==='diproses', 'text-red-500': ord.status==='dibatalkan'}" class="font-bold capitalize" x-text="ord.status"></span>
+                    </div>
+                  </template>
+                  <template x-if="orders.filter(o => o.customer_id === customerForm.uid || o.customer_id === customerForm.id).length === 0">
+                    <p class="text-[10px] text-slate-400 italic text-center py-2">Belum pernah membuat pesanan.</p>
+                  </template>
+                </div>
+              </div>
+
+            </div>
+            
+            <div class="pt-2 border-t flex gap-2">
+              <button @click="saveCustomer()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md">Simpan Perubahan</button>
+              <button @click="showCustomerModal = false" class="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold px-4 py-2.5 rounded-xl">Batal</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal Peta Pesanan -->
+        <div x-show="showOrderMapModal" @click.self="showOrderMapModal = false" x-cloak class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div class="bg-white w-full max-w-lg rounded-2xl p-4 space-y-3">
+            <div class="flex justify-between items-center border-b pb-2"><h3 class="text-xs font-black">📍 Rute Google Maps</h3><button @click="showOrderMapModal = false" class="text-slate-400 font-bold hover:text-red-500 text-lg">✕</button></div>
+            <div class="bg-slate-50 p-2.5 rounded-xl text-xs space-y-1 border">
+              <p><strong>Jemput:</strong> <span x-text="activeMapOrder ? (activeMapOrder.titik_jemput || activeMapOrder.toko_nama) : ''"></span></p>
+              <p><strong>Tujuan:</strong> <span x-text="activeMapOrder ? activeMapOrder.titik_tujuan : ''"></span></p>
+            </div>
+            <div id="google-order-map" class="shadow-md border border-slate-200" style="height: 350px; width: 100%;"></div>
+          </div>
+        </div>
+
+      </div>
+    </template>
+
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyB_Ndbf9idBUkMb5aNU-Bc8qZIEVI90Ddk",
+      authDomain: "siapjek-8d69c.firebaseapp.com",
+      databaseURL: "https://siapjek-8d69c-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "siapjek-8d69c"
+    };
+    if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+    const db = firebase.database();
+
+    let googleMapToko = null; let googleMarkerToko = null;
+    let googleMapOrder = null; let googleMarkerAsal = null; let googleMarkerTujuan = null;
+    let googleMapLiveDriver = null; let googleLiveDriverMarkers = {};
+
+    function playNotificationSound() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const audioCtx = new AudioContext();
+        if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15);
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+      } catch (e) { console.log('Audio notification bypassed:', e); }
+    }
+
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('adminPanel', () => ({
+        isLoggedIn: false,
+        currentUserEmail: '',
+        
+        // State Form Login Firebase Auth
+        inputEmail: '',
+        inputPassword: '',
+        isLoggingIn: false,
+
+        activeTab: 'overview',
+        systemSettings: { 
+          tarif_dasar_motor: 5000, 
+          tarif_per_km_motor: 2000, 
+          tarif_dasar_jastip: 7000, 
+          tarif_per_km_jastip: 2500, 
+          komisi_persen: 15, 
+          radius_km: 3, 
+          admin_wa: '081528644143', 
+          min_saldo_driver: 10000, 
+          min_saldo_mitra: 0,
+          buka_fitur_topup_pelanggan: false,
+          buka_fitur_tarik_pelanggan: false,
+          pesan_fitur_saldo: 'Fitur belum bisa digunakan'
+        },
+        
+        maintenanceActive: false,
+        maintenanceMessage: 'Aplikasi sedang dalam pemeliharaan rutin. Mohon kembali beberapa saat lagi.',
+
+        topUpForm: { target_id: '', nominal: 0 },
+        bankSettings: { nama_bank: 'BCA', nomor_rekening: '1234567890', atas_nama: 'Admin SiapJek' },
+        customerLinkInput: '',
+        driverLinkInput: '',
+        mitraLinkInput: '',
+        driverLoaderMode: 'source',
+        mitraLoaderMode: 'source',
+        loaderMode: 'source', // source = HTML dari Firebase, link = URL hosting
+        topBanner: { tag: 'ASLI SAMUDA', tagColor: 'bg-orange-500', title: 'Ojek Online-nya Orang Samuda! 🛵💨', desc: 'Cepat, Murah & Siap Antar Samuda dan Sekitarnya', img: 'https://cdn-icons-png.flaticon.com/512/3097/3097180.png' },
+        runningText: 'Selamat datang di SiapJek - Ojek Online-nya Orang Samuda!',
+        adminPromos: {},
+        appCodes: { pelanggan: '', driver: '', mitra: '' },
+        appFileNames: { pelanggan: 'PELANGGNJA.html', driver: 'DRIVER.html', mitra: 'MITRA.html' },
+        
+        merchants: [], products: [], drivers: [], customers: [], orders: [], mutasiSaldo: [], withdrawals: [], topups: [],
+        
+        allCustomerChats: {},
+        allDriverChats: {},
+        allMerchantChats: {},
+        activeChatId: null,
+        activeChatType: null,
+        adminReplyText: '',
+        adminChatPhotoPreview: null,
+
+        searchOrder: '', searchMerchant: '', searchDriver: '', searchCustomer: '', customerStatusFilter: 'all',
+
+        selectedProductMerchant: null,
+        showAssignModal: false,
+        selectedOrderForAssign: null,
+
+        merchantForm: { id: '', nama_toko: '', kategori: 'Pasar Samuda', alamat_lengkap: '', foto_toko: '', lat: -2.9818, lng: 112.9739, is_mitra: true, is_open: true, jam_buka: '08:00', jam_tutup: '22:00' },
+        showMerchantModal: false,
+        isSavingMerchant: false,
+        merchantAccountForm: { email: '', password: '' },
+        isLocating: false, 
+
+        productForm: { toko_id: '', id: '', nama_produk: '', harga: 0, deskripsi: '', foto_produk: '', is_promo: false, variations: [] },
+        showProductModal: false,
+        isSavingProduct: false,
+
+        driverForm: { id: '', nama: '', no_hp: '', merk_motor: '', nama_motor: '', warna_motor: '', plat_nomor: '', foto: '', status: 'aktif' },
+        showDriverModal: false,
+        isSavingDriver: false,
+        driverAccountForm: { nama: '', email: '', password: '', no_hp: '', merk_motor: '', nama_motor: '', plat_nomor: '' },
+        showDriverAccountModal: false,
+        isRegisteringDriverAccount: false,
+
+        customerForm: { uid: '', id: '', nama: '', email: '', no_hp: '', saldo: 0, status: 'aktif', foto: '' },
+        showCustomerModal: false,
+        
+        activeMapOrder: null,
+        showOrderMapModal: false,
+
+        init() {
+          // Firebase Auth State Listener
+          firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+              
+              // Mengecek langsung ke node 'admins' berdasarkan UID pengguna yang sedang login
+              db.ref('admins/' + user.uid).once('value').then((snap) => {
+                
+                // Jika UID tersebut ada di node 'admins' dan nilainya true
+                if (snap.exists() && snap.val() === true) {
+                  // Izinkan masuk panel
+                  this.isLoggedIn = true;
+                  this.currentUserEmail = user.email;
+                  this.initAdmin();
+                } else {
+                  // Jika UID tidak terdaftar sebagai admin, tolak dan paksa logout
+                  firebase.auth().signOut();
+                  this.isLoggedIn = false;
+                  this.currentUserEmail = '';
+                  alert('❌ AKSES DITOLAK: Akun ini tidak memiliki hak akses sebagai Admin.');
+                }
+                
+              }).catch((error) => {
+                console.error("Gagal memverifikasi admin:", error);
+                firebase.auth().signOut();
+                alert('Terjadi kesalahan koneksi saat memverifikasi hak akses admin.');
+              });
+
+            } else {
+              this.isLoggedIn = false;
+              this.currentUserEmail = '';
+            }
+          });
+
+          this.$watch('activeTab', (val) => {
+            if (val === 'live_drivers') {
+              this.$nextTick(() => {
+                this.initGoogleLiveDriverMap();
+                if (googleMapLiveDriver) {
+                  google.maps.event.trigger(googleMapLiveDriver, 'resize');
+                }
+              });
+            }
+          });
+        },
+
+        // Logika Login Baru Menggunakan Firebase Auth
+        loginAdminEmail() {
+          this.isLoggingIn = true;
+          firebase.auth().signInWithEmailAndPassword(this.inputEmail, this.inputPassword)
+            .then((userCredential) => {
+              this.isLoggingIn = false;
+              this.inputEmail = '';
+              this.inputPassword = '';
+              // onAuthStateChanged akan merespon dan memuat UI admin otomatis
+            })
+            .catch((error) => {
+              this.isLoggingIn = false;
+              alert('❌ Gagal login: ' + error.message);
+            });
+        },
+
+        // Logika Logout Menggunakan Firebase Auth
+        logoutAdmin() {
+          if(confirm('Keluar dari Panel Admin?')) {
+            firebase.auth().signOut().then(() => {
+              // onAuthStateChanged akan merespon otomatis
+              alert('✅ Anda telah berhasil keluar.');
+            }).catch((error) => {
+              alert('❌ Gagal logout: ' + error.message);
+            });
+          }
+        },
+
+        initAdmin() {
+          this.cleanUpOldOrders();
+
+          db.ref('settings/app_config').on('value', snap => { 
+            if(snap.exists()) {
+              let val = snap.val();
+              this.systemSettings = { ...this.systemSettings, ...val };
+            }
+          });
+
+          // Mengambil nilai link customer untuk aplikasi loader (BARU DITAMBAHKAN)
+          db.ref('customer_link').on('value', snap => {
+            if(snap.exists()) {
+              this.customerLinkInput = snap.val();
+            }
+          });
+
+          // Mengambil metode sumber loader yang aktif dari Firebase
+          db.ref('loader_settings/mode').on('value', snap => {
+            const mode = snap.val();
+            this.loaderMode = mode === 'link' ? 'link' : 'source';
+          });
+          db.ref('driver_link').on('value', snap => { this.driverLinkInput = snap.val() || ''; });
+          db.ref('mitra_link').on('value', snap => { this.mitraLinkInput = snap.val() || ''; });
+          db.ref('loader_settings/driver_mode').on('value', snap => { this.driverLoaderMode = snap.val() === 'link' ? 'link' : 'source'; });
+          db.ref('loader_settings/mitra_mode').on('value', snap => { this.mitraLoaderMode = snap.val() === 'link' ? 'link' : 'source'; });
+
+          db.ref('settings/maintenance_mode').on('value', snap => {
+            if (snap.exists()) {
+              let data = snap.val();
+              if (typeof data === 'object' && data !== null) {
+                this.maintenanceActive = data.active || false;
+                this.maintenanceMessage = data.message || this.maintenanceMessage;
+              } else {
+                this.maintenanceActive = Boolean(data);
+              }
+            }
+          });
+
+          db.ref('source_code/pelanggan').on('value', snap => {
+            if(snap.exists()) this.appCodes.pelanggan = snap.val();
+          });
+          db.ref('source_code/driver').on('value', snap => {
+            if(snap.exists()) this.appCodes.driver = snap.val();
+          });
+          db.ref('source_code/mitra').on('value', snap => {
+            if(snap.exists()) this.appCodes.mitra = snap.val();
+          });
+
+          db.ref('source_code/pelanggan_meta').on('value', snap => {
+            if(snap.exists() && snap.val().filename) this.appFileNames.pelanggan = snap.val().filename;
+          });
+          db.ref('source_code/driver_meta').on('value', snap => {
+            if(snap.exists() && snap.val().filename) this.appFileNames.driver = snap.val().filename;
+          });
+          db.ref('source_code/mitra_meta').on('value', snap => {
+            if(snap.exists() && snap.val().filename) this.appFileNames.mitra = snap.val().filename;
+          });
+
+          db.ref('settings/top_banner').on('value', snap => { if(snap.exists()) this.topBanner = snap.val(); });
+          db.ref('settings/notice').on('value', snap => { if(snap.exists()) this.runningText = snap.val(); });
+          db.ref('settings/bank_admin').on('value', snap => { if(snap.exists()) this.bankSettings = snap.val(); });
+          db.ref('settings/promos').on('value', snap => {
+            let data = {};
+            if(snap.exists()) snap.forEach(c => { if(['slide_1', 'slide_2', 'slide_3'].includes(c.key)) data[c.key] = c.val(); else db.ref('settings/promos/' + c.key).remove(); });
+            this.adminPromos = data;
+          });
+db.ref('merchants').on('value', snap => {
+            let list = [];
+            if(snap.exists()) snap.forEach(c => { let item = c.val(); list.push({ ...item, id: item.id || c.key, nama_toko: item.nama_toko || item.nama || 'Toko', kategori: item.kategori || 'Makanan', alamat_lengkap: item.alamat_lengkap || item.alamat || '-', foto_toko: item.foto_toko || item.gambar || '', lat: item.lat || -2.9818, lng: item.lng || 112.9739, is_mitra: item.is_mitra ?? true, is_open: item.is_open ?? true }); });
+            this.merchants = list;
+          });
+
+          db.ref('produk').on('value', snap => {
+            let list = [];
+            if(snap.exists()) snap.forEach(tokoChild => { tokoChild.forEach(prodChild => { let val = prodChild.val(); list.push({ id: prodChild.key, toko_id: tokoChild.key, ...val, variations: val.variations || val.variatons || [] }); }); });
+            this.products = list;
+          });
+          
+          db.ref('drivers').on('value', snap => {
+            let list = [];
+            let activeDriverIds = {};
+            if(snap.exists()) snap.forEach(c => { 
+              let item = c.val(); 
+              let drvId = item.id || c.key;
+              list.push({ ...item, id: drvId, nama: item.nama || 'Driver', no_hp: item.no_hp || '-', merk_motor: item.merk_motor || '', nama_motor: item.nama_motor || '', warna_motor: item.warna_motor || item.warna || item.motor_warna || item.color_motor || '', plat_nomor: item.plat_nomor || '-', foto: item.foto || '', status: item.status || 'aktif', lat: item.lat || -2.9818, lng: item.lng || 112.9739 }); 
+              
+              if (item.status === 'aktif' && item.lat && item.lng) {
+                activeDriverIds[drvId] = true;
+                if (googleMapLiveDriver) {
+                  let motorInfo = (item.merk_motor || '') + ' ' + (item.nama_motor || '');
+                  let pos = { lat: Number(item.lat), lng: Number(item.lng) };
+                  if (googleLiveDriverMarkers[drvId]) {
+                    googleLiveDriverMarkers[drvId].setPosition(pos);
+                  } else {
+                    let marker = new google.maps.Marker({
+                      position: pos,
+                      map: googleMapLiveDriver,
+                      title: item.nama
+                    });
+                    let infowindow = new google.maps.InfoWindow({
+                      content: `<div style="font-size:11px; font-weight:bold;">🛵 ${item.nama}</div><div style="font-size:10px;">${motorInfo}</div><div style="font-size:10px; color:#e11d48;">${item.plat_nomor || '-'}</div>`
+                    });
+                    marker.addListener('click', () => { infowindow.open(googleMapLiveDriver, marker); });
+                    googleLiveDriverMarkers[drvId] = marker;
+                  }
+                }
+              }
+            });
+            this.drivers = list;
+
+            if (googleMapLiveDriver) {
+              Object.keys(googleLiveDriverMarkers).forEach(id => {
+                if (!activeDriverIds[id]) {
+                  googleLiveDriverMarkers[id].setMap(null);
+                  delete googleLiveDriverMarkers[id];
+                }
+              });
+            }
+          });
+
+          let firstCustomerLoad = true;
+          db.ref('customers').on('value', snap => {
+            let list = [];
+            if(snap.exists()) {
+              snap.forEach(c => { 
+                let item = c.val(); 
+                let uidKey = c.key;
+                list.push({ 
+                  uid: uidKey,
+                  id: item.id || uidKey,
+                  nama: item.nama || 'Pelanggan', 
+                  email: item.email || '-',
+                  no_hp: item.no_hp || '-', 
+                  saldo: Number(item.saldo || 0), 
+                  status: item.status || 'aktif',
+                  foto: item.foto || ''
+                }); 
+              });
+            }
+            if (!firstCustomerLoad && list.length > this.customers.length) {
+              playNotificationSound();
+            }
+            firstCustomerLoad = false;
+            this.customers = list;
+          });
+
+          let firstOrderLoad = true;
+          db.ref('orders').limitToLast(100).on('value', snap => {
+            let list = [];
+            if(snap.exists()) {
+              snap.forEach(c => { list.unshift({ ...(c.val() || {}), id: c.key, _firebaseKey: c.key }); });
+            }
+            if (!firstOrderLoad && list.length > this.orders.length) {
+              playNotificationSound();
+            }
+            firstOrderLoad = false;
+            this.orders = list;
+          });
+
+          let firstChatLoad = true;
+          const checkChatsForSound = (allChats) => {
+            let unreadExist = false;
+            Object.values(allChats).forEach(chatObj => {
+              if (chatObj && typeof chatObj === 'object') {
+                Object.values(chatObj).forEach(msg => {
+                  if (msg && msg.dibaca === false && msg.pengirim !== 'admin') unreadExist = true;
+                });
+              }
+            });
+            return unreadExist;
+          };
+
+          db.ref('customer_chats').on('value', snap => {
+            let val = snap.val() || {};
+            if (!firstChatLoad && checkChatsForSound(val)) { playNotificationSound(); }
+            firstChatLoad = false;
+            this.allCustomerChats = val;
+          });
+          db.ref('driver_chats').on('value', snap => { this.allDriverChats = snap.val() || {}; });
+          db.ref('merchant_chats').on('value', snap => { this.allMerchantChats = snap.val() || {}; });
+
+          db.ref('mutasi_saldo').limitToLast(50).on('value', snap => {
+            let list = [];
+            if(snap.exists()) snap.forEach(c => { list.unshift({ ...(c.val() || {}), id: c.key, _firebaseKey: c.key }); });
+            this.mutasiSaldo = list;
+          });
+
+          let firstWdLoad = true;
+          db.ref('withdrawals').on('value', snap => {
+            let list = [];
+            if(snap.exists()) snap.forEach(c => { list.unshift({ ...(c.val() || {}), id: c.key, _firebaseKey: c.key }); });
+            if (!firstWdLoad && list.filter(w => w.status === 'pending').length > this.pendingWithdrawals.length) {
+              playNotificationSound();
+            }
+            firstWdLoad = false;
+            this.withdrawals = list;
+          });
+
+          let firstTopupLoad = true;
+          db.ref('topups').on('value', snap => {
+            let list = [];
+            if(snap.exists()) snap.forEach(c => { list.unshift({ ...(c.val() || {}), id: c.key, _firebaseKey: c.key }); });
+            if (!firstTopupLoad && list.filter(t => t.status === 'pending').length > this.pendingTopups.length) {
+              playNotificationSound();
+            }
+            firstTopupLoad = false;
+            this.topups = list;
+          });
+        },
+cleanUpOldOrders() {
+          let tujuhHariMs = 7 * 24 * 60 * 60 * 1000;
+          let waktuSekarang = Date.now();
+
+          db.ref('orders').once('value', snap => {
+            if (snap.exists()) {
+              snap.forEach(c => {
+                let ord = c.val();
+                let statusOrder = (ord.status || '').toLowerCase().trim();
+                let waktuOrder = ord.timestamp || ord.waktu || 0;
+
+                if (['selesai', 'dibatalkan', 'ditolak'].includes(statusOrder) && waktuOrder > 0) {
+                  if (waktuSekarang - waktuOrder > tujuhHariMs) {
+                    db.ref('orders/' + c.key).remove();
+                  }
+                }
+              });
+            }
+          });
+        },
+
+        initGoogleLiveDriverMap() {
+          this.$nextTick(() => {
+            if (!googleMapLiveDriver) {
+              googleMapLiveDriver = new google.maps.Map(document.getElementById('google-live-driver-map'), {
+                center: { lat: -2.9818, lng: 112.9739 },
+                zoom: 14,
+                gestureHandling: 'greedy'
+              });
+            } else {
+              google.maps.event.trigger(googleMapLiveDriver, 'resize');
+            }
+
+            this.drivers.filter(d => d.status === 'aktif' && d.lat && d.lng).forEach(d => {
+              let motorInfo = (d.merk_motor || '') + ' ' + (d.nama_motor || '');
+              let pos = { lat: Number(d.lat), lng: Number(d.lng) };
+              if (googleLiveDriverMarkers[d.id]) {
+                googleLiveDriverMarkers[d.id].setPosition(pos);
+              } else {
+                let marker = new google.maps.Marker({
+                  position: pos,
+                  map: googleMapLiveDriver,
+                  title: d.nama
+                });
+                let infowindow = new google.maps.InfoWindow({
+                  content: `<div style="font-size:11px; font-weight:bold;">🛵 ${d.nama}</div><div style="font-size:10px;">${motorInfo}</div><div style="font-size:10px; color:#e11d48;">${d.plat_nomor || '-'}</div>`
+                });
+                marker.addListener('click', () => { infowindow.open(googleMapLiveDriver, marker); });
+                googleLiveDriverMarkers[d.id] = marker;
+              }
+            });
+          });
+        },
+
+        saveMaintenance() {
+          db.ref('settings/maintenance_mode').set({
+            active: this.maintenanceActive,
+            message: this.maintenanceMessage.trim()
+          }).then(() => {
+            alert(this.maintenanceActive ? '⚠️ Mode Pemeliharaan AKTIF! Seluruh aplikasi pengguna terkunci.' : '✅ Mode Pemeliharaan DIMATIKAN.');
+          });
+        },
+
+        // Simpan metode yang harus digunakan loader pelanggan
+        // Memastikan URL hosting benar sebelum disimpan ke Firebase.
+        validLoaderUrl(value) {
+          try {
+            const url = new URL(String(value || '').trim());
+            return (url.protocol === 'https:' || url.protocol === 'http:') && !!url.hostname;
+          } catch (e) { return false; }
+        },
+
+        // Simpan metode loader Pelanggan. Jika memilih Link Hosting,
+        // URL yang diisi ikut disimpan terlebih dahulu agar pilihan langsung siap digunakan.
+        saveLoaderMode() {
+          const mode = this.loaderMode === 'link' ? 'link' : 'source';
+          const value = String(this.customerLinkInput || '').trim();
+          if (mode === 'link' && !this.validLoaderUrl(value)) {
+            alert('⚠️ Isi Link Hosting Pelanggan dengan URL http:// atau https:// yang valid, lalu tekan Simpan Metode Loader.');
+            return;
+          }
+          const saveMode = () => db.ref('loader_settings/mode').set(mode);
+          const saveTask = mode === 'link' ? db.ref('customer_link').set(value).then(saveMode) : saveMode();
+          saveTask.then(() => alert('✅ Metode loader Pelanggan berhasil disimpan: ' + (mode === 'link' ? 'Link Hosting' : 'Source Code Firebase') + '.'))
+            .catch(err => alert('❌ Gagal menyimpan metode loader Pelanggan: ' + (err && err.message ? err.message : err)));
+        },
+
+        // Simpan metode loader Driver atau Mitra dengan jalur Firebase masing-masing.
+        saveAppLoaderMode(type) {
+          const isDriver = type === 'driver';
+          const mode = (isDriver ? this.driverLoaderMode : this.mitraLoaderMode) === 'link' ? 'link' : 'source';
+          const value = String(isDriver ? this.driverLinkInput : this.mitraLinkInput || '').trim();
+          const modePath = isDriver ? 'loader_settings/driver_mode' : 'loader_settings/mitra_mode';
+          const linkPath = isDriver ? 'driver_link' : 'mitra_link';
+          const appName = isDriver ? 'Driver' : 'Mitra';
+          if (mode === 'link' && !this.validLoaderUrl(value)) {
+            alert('⚠️ Isi Link Hosting ' + appName + ' dengan URL http:// atau https:// yang valid, lalu tekan Simpan Metode Loader.');
+            return;
+          }
+          const saveMode = () => db.ref(modePath).set(mode);
+          const saveTask = mode === 'link' ? db.ref(linkPath).set(value).then(saveMode) : saveMode();
+          saveTask.then(() => alert('✅ Metode loader ' + appName + ' berhasil disimpan: ' + (mode === 'link' ? 'Link Hosting' : 'Source Code Firebase') + '.'))
+            .catch(err => alert('❌ Gagal menyimpan metode loader ' + appName + ': ' + (err && err.message ? err.message : err)));
+        },
+
+        saveAppLoaderLink(type) {
+          const isDriver = type === 'driver';
+          const value = String((isDriver ? this.driverLinkInput : this.mitraLinkInput) || '').trim();
+          if (!value) return alert('⚠️ Link aplikasi tidak boleh kosong.');
+          if (!this.validLoaderUrl(value)) return alert('⚠️ Masukkan URL lengkap yang valid dan diawali https:// atau http://');
+          const path = isDriver ? 'driver_link' : 'mitra_link';
+          db.ref(path).set(value)
+            .then(() => alert('✅ Link aplikasi ' + (isDriver ? 'Driver' : 'Mitra') + ' berhasil disimpan.'))
+            .catch(err => alert('❌ Gagal menyimpan link: ' + (err && err.message ? err.message : err)));
+        },
+
+        // Simpan URL hosting aplikasi Pelanggan.
+        saveCustomerLink() {
+          const value = String(this.customerLinkInput || '').trim();
+          if (!value) return alert('⚠️ Link aplikasi tidak boleh kosong.');
+          if (!this.validLoaderUrl(value)) return alert('⚠️ Masukkan URL lengkap yang valid dan diawali https:// atau http://');
+          db.ref('customer_link').set(value)
+            .then(() => alert('✅ Link aplikasi Pelanggan berhasil disimpan.'))
+            .catch(err => alert('❌ Gagal menyimpan link: ' + (err && err.message ? err.message : err)));
+        },
+
+        bersihkanSeluruhDatabaseFirebase() {
+          let konfirmasi1 = confirm("⚠ PERINGATAN KERAS!\n\nTindakan ini akan MENGHAPUS PERMANEN seluruh riwayat pesanan, riwayat chat, mutasi saldo, permohonan top-up, permohonan tarik dana, dan log dari database Firebase.\n\nData yang dihapus TIDAK DAPAT DIKEMBALIKAN. Lanjutkan?");
+          
+          if (!konfirmasi1) return;
+
+          let konfirmasi2 = prompt("Ketik kata 'HAPUS' untuk mengonfirmasi pembersihan total database:");
+          if (konfirmasi2 !== 'HAPUS') {
+            alert("❌ Konfirmasi dibatalkan. Kata kunci salah.");
+            return;
+          }
+
+          alert("⏳ Sedang membersihkan database secara massal. Mohon tunggu beberapa saat...");
+
+          let pathsToClean = ['orders', 'order_chats', 'customer_chats', 'driver_chats', 'merchant_chats', 'mutasi_saldo', 'topups', 'withdrawals', 'notifications'];
+
+          let promises = pathsToClean.map(path => {
+            return db.ref(path).remove().catch(err => { console.warn(`Gagal menghapus path ${path}:`, err); });
+          });
+
+          Promise.all(promises)
+            .then(() => {
+              alert("✅ Berhasil! Seluruh riwayat pesanan, chat, mutasi saldo, top-up, penarikan, dan permintaan password telah dihapus permanen dari database.");
+              window.location.reload();
+            })
+            .catch(error => {
+              alert("❌ Terjadi kesalahan saat menghapus data: " + error.message);
+            });
+        },
+
+        loadCodeFromFile(event, type) {
+          const file = event.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            this.appCodes[type] = e.target.result;
+            this.appFileNames[type] = file.name;
+            alert(`✅ Berhasil memuat isi file ${file.name} ke editor ${type}! Jangan lupa klik tombol Simpan.`);
+            event.target.value = '';
+          };
+          reader.readAsText(file);
+        },
+
+        downloadAppCode(type) {
+          const codeContent = this.appCodes[type] || '';
+          const fileName = this.appFileNames[type] || (type + '.html');
+          const blob = new Blob([codeContent], { type: 'text/html;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        },
+
+        saveAppCode(type) {
+          if (!confirm(`Simpan dan sinkronkan kode sumber beserta nama file ${type} ke database secara permanen?`)) return;
+          let updates = {};
+          updates['source_code/' + type] = this.appCodes[type];
+          updates['source_code/' + type + '_meta'] = { filename: this.appFileNames[type], updatedAt: Date.now() };
+
+          db.ref().update(updates).then(() => {
+            alert(`✅ Kode dan nama file ${type} (${this.appFileNames[type]}) berhasil disimpan secara permanen di database!`);
+          }).catch(err => {
+            alert('❌ Gagal menyimpan kode: ' + err.message);
+          });
+        },
+
+        isDriverBusy(driverId) {
+          return this.orders.some(o => o.driver_id === driverId && ['diambil_driver', 'mengantar', 'diproses'].includes(o.status));
+        },
+
+        selectActiveChat(id, type) { 
+          this.activeChatId = id; 
+          this.activeChatType = type; 
+          let path = type === 'customer' ? `customer_chats/${id}` : (type === 'driver' ? `driver_chats/${id}` : `merchant_chats/${id}`);
+          db.ref(path).once('value', snap => {
+            if(snap.exists()) {
+              snap.forEach(msgSnap => {
+                let msgVal = msgSnap.val();
+                if(msgVal && msgVal.dibaca === false) {
+                  db.ref(`${path}/${msgSnap.key}/dibaca`).set(true);
+                }
+              });
+            }
+          });
+        },
+
+        getCustomerName(custId) { 
+          let found = this.customers.find(c => c.uid === custId || c.id === custId); 
+          return found ? found.nama : (custId || 'Pelanggan'); 
+        },
+        getCustomerHp(custId) {
+          let found = this.customers.find(c => c.uid === custId || c.id === custId); 
+          return found ? found.no_hp : '';
+        },
+        getDriverName(drvId) { let found = this.drivers.find(d => d.id === drvId); return found ? found.nama : drvId; },
+        getMerchantName(merchId) { let found = this.merchants.find(m => m.id === merchId); return found ? found.nama_toko : merchId; },
+        // Terima format foto dari aplikasi pelanggan, driver, dan mitra:
+        // {foto: dataURL}, {pesan: dataURL, tipe:'image'}, atau field gambar/image/url.
+        getChatImage(msg) {
+          if (!msg || typeof msg !== 'object') return '';
+          const candidates = [msg.foto, msg.gambar, msg.image, msg.imageUrl, msg.image_url, msg.url];
+          for (const value of candidates) {
+            if (typeof value === 'string' && /^(data:image\/|https?:\/\/)/i.test(value.trim())) return value.trim();
+          }
+          const pesan = typeof msg.pesan === 'string' ? msg.pesan.trim() : '';
+          if ((String(msg.tipe || '').toLowerCase() === 'image' || String(msg.tipe || '').toLowerCase() === 'foto' || /^data:image\//i.test(pesan)) && /^(data:image\/|https?:\/\/)/i.test(pesan)) return pesan;
+          return '';
+        },
+        getChatText(msg) {
+          if (!msg || typeof msg !== 'object') return '';
+          const pesan = typeof msg.pesan === 'string' ? msg.pesan : '';
+          if (this.getChatImage(msg) && (String(msg.tipe || '').toLowerCase() === 'image' || String(msg.tipe || '').toLowerCase() === 'foto' || /^data:image\//i.test(pesan))) {
+            return msg.caption || msg.keterangan || msg.teks || '';
+          }
+          return pesan;
+        },
+        getLastMessage(chatObj) {
+          if (!chatObj || typeof chatObj !== 'object') return '';
+          const messages = Object.values(chatObj).filter(m => m && typeof m === 'object').sort((a, b) => (a.waktu || 0) - (b.waktu || 0));
+          if (!messages.length) return '';
+          const lastMsg = messages[messages.length - 1];
+          if (this.getChatImage(lastMsg)) return lastMsg.caption || lastMsg.keterangan || '📷 [Gambar]';
+          return lastMsg.pesan || '';
+        },
+        hasUnreadChat(chatObj) {
+          if (!chatObj || typeof chatObj !== 'object') return false;
+          return Object.values(chatObj).some(m => m && m.dibaca === false && m.pengirim !== 'admin');
+        },
+        get activeChatMessages() {
+          if (!this.activeChatId) return [];
+          let source = null;
+          if (this.activeChatType === 'customer') source = this.allCustomerChats[this.activeChatId];
+          else if (this.activeChatType === 'driver') source = this.allDriverChats[this.activeChatId];
+          else source = this.allMerchantChats[this.activeChatId];
+
+          if (!source || typeof source !== 'object') return [];
+          return Object.values(source).filter(m => m && typeof m === 'object').sort((a, b) => (a.waktu || 0) - (b.waktu || 0));
+        },
+        get totalUnreadChats() {
+          let count = 0;
+          [this.allCustomerChats, this.allDriverChats, this.allMerchantChats].forEach(chatGroup => {
+            if (chatGroup && typeof chatGroup === 'object') {
+              Object.values(chatGroup).forEach(chatObj => {
+                if (chatObj && typeof chatObj === 'object') {
+                  Object.values(chatObj).forEach(m => {
+                    if (m && m.dibaca === false && m.pengirim !== 'admin') count++;
+                  });
+                }
+              });
+            }
+          });
+          return count;
+        },
+
+        handleChatPhotoUpload(event) {
+          const file = event.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let w = img.width, h = img.height;
+              const max = 400;
+              if (w > h && w > max) { h = Math.round((h * max) / w); w = max; } 
+              else if (h > max) { w = Math.round((w * max) / h); h = max; }
+              canvas.width = w; canvas.height = h;
+              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+              this.adminChatPhotoPreview = canvas.toDataURL('image/webp', 0.35);
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        },
+
+        sendAdminReply() {
+          if ((!this.adminReplyText.trim() && !this.adminChatPhotoPreview) || !this.activeChatId) return;
+          let msgId = 'CHAT_' + Date.now();
+          let path = '';
+          if (this.activeChatType === 'customer') path = `customer_chats/${this.activeChatId}/${msgId}`;
+          else if (this.activeChatType === 'driver') path = `driver_chats/${this.activeChatId}/${msgId}`;
+          else path = `merchant_chats/${this.activeChatId}/${msgId}`;
+
+          const teksBalasan = this.adminReplyText.trim();
+          let chatPayload = {
+            id: msgId,
+            pengirim: 'admin',
+            waktu: Date.now(),
+            dibaca: true
+          };
+
+          if (this.adminChatPhotoPreview) {
+            // Format kompatibel dengan aplikasi driver/pelanggan yang menyimpan
+            // foto pada pesan + tipe:image; foto juga disalin ke field foto untuk
+            // aplikasi yang memakai format lama. Teks opsional disimpan sebagai caption.
+            chatPayload.pesan = this.adminChatPhotoPreview;
+            chatPayload.tipe = 'image';
+            chatPayload.foto = this.adminChatPhotoPreview;
+            if (teksBalasan) chatPayload.caption = teksBalasan;
+          } else {
+            chatPayload.pesan = teksBalasan;
+          }
+
+          db.ref(path).set(chatPayload).then(() => {
+            this.adminReplyText = '';
+            this.adminChatPhotoPreview = null;
+          }).catch(err => {
+            alert('❌ Gagal mengirim chat: ' + err.message);
+          });
+        },
+
+        deleteChatMessage(msgId) {
+          if (!confirm('Hapus pesan ini secara permanen?')) return;
+          let path = '';
+          if (this.activeChatType === 'customer') path = `customer_chats/${this.activeChatId}/${msgId}`;
+          else if (this.activeChatType === 'driver') path = `driver_chats/${this.activeChatId}/${msgId}`;
+          else path = `merchant_chats/${this.activeChatId}/${msgId}`;
+
+          db.ref(path).remove().then(() => {
+            alert('✅ Pesan berhasil dihapus.');
+          }).catch(err => {
+            alert('❌ Gagal menghapus pesan: ' + err.message);
+          });
+        },
+
+        openAssignDriverModal(ord) { this.selectedOrderForAssign = ord; this.showAssignModal = true; },
+        assignDriverToOrder(driver) {
+          if (!this.selectedOrderForAssign) return;
+          if (this.isDriverBusy(driver.id)) {
+            if (!confirm(`⚠ Perhatian: Driver ${driver.nama} sedang sibuk mengantar pesanan lain. Tetap tugaskan pesanan ini?`)) return;
+          }
+          const order = this.selectedOrderForAssign;
+          const orderId = String(order.id || '');
+          const layanan = String(order.layanan || '').toLowerCase().trim();
+          const isMotorOrder = layanan === 'motor' || order.toko_id === '-' || orderId.startsWith('OJECK');
+          // Status langsung disesuaikan dengan status awal yang dikenali driver dan timeline pelanggan.
+          const statusAwalDriver = isMotorOrder ? 'menuju_lokasi' : 'menuju_toko';
+          db.ref('orders/' + orderId).update({
+            driver_id: driver.id,
+            driver_nama: driver.nama,
+            driver_hp: driver.no_hp || '',
+            status: statusAwalDriver,
+            driver_ditugaskan_pada: Date.now()
+          }).then(() => {
+            this.showAssignModal = false;
+            alert(`✅ Driver ${driver.nama} berhasil ditugaskan untuk pesanan ${orderId}!`);
+          }).catch(err => {
+            console.error('Gagal menugaskan driver:', err);
+            alert('❌ Gagal menugaskan driver. Periksa koneksi lalu coba lagi.');
+          });
+        },
+
+        toggleMerchantStatus(id, currentStatus) {
+          let newStatus = !currentStatus;
+          db.ref('merchants/' + id + '/is_open').set(newStatus).then(() => {
+            alert(`✅ Toko berhasil diubah statusnya menjadi: ${newStatus ? 'BUKA' : 'TUTUP'}`);
+          });
+        },
+
+        get filteredOrders() { 
+          return this.orders.filter(o => { 
+            if(!this.searchOrder) return true; 
+            let q = this.searchOrder.toLowerCase(); 
+            let custNama = o.customer_nama || this.getCustomerName(o.customer_id);
+            return (o.id && o.id.toLowerCase().includes(q)) || (custNama && custNama.toLowerCase().includes(q)) || (o.driver_nama && o.driver_nama.toLowerCase().includes(q)); 
+          }); 
+        },
+        
+        get filteredCustomers() { 
+          return this.customers.filter(c => { 
+            if (this.customerStatusFilter !== 'all' && c.status !== this.customerStatusFilter) {
+              return false;
+            }
+            if(!this.searchCustomer) return true; 
+            let q = this.searchCustomer.toLowerCase(); 
+            return (c.nama && c.nama.toLowerCase().includes(q)) || 
+                   (c.no_hp && c.no_hp.toLowerCase().includes(q)) || 
+                   (c.email && c.email.toLowerCase().includes(q)) || 
+                   (c.uid && c.uid.toLowerCase().includes(q)); 
+          }); 
+        },
+        get filteredMerchants() { return this.merchants.filter(m => { if(!this.searchMerchant) return true; let q = this.searchMerchant.toLowerCase(); return (m.nama_toko && m.nama_toko.toLowerCase().includes(q)) || (m.id && m.id.toLowerCase().includes(q)); }); },
+        get filteredDrivers() { return this.drivers.filter(d => { if(!this.searchDriver) return true; let q = this.searchDriver.toLowerCase(); return (d.nama && d.nama.toLowerCase().includes(q)) || (d.id && d.id.toLowerCase().includes(q)) || (d.merk_motor && d.merk_motor.toLowerCase().includes(q)) || (d.nama_motor && d.nama_motor.toLowerCase().includes(q)); }); },
+        get pendingWithdrawals() { return this.withdrawals.filter(w => w.status === 'pending'); },
+        get pendingTopups() { return this.topups.filter(t => t.status === 'pending'); },
+
+        getPesananHariIniCount() {
+          const todayStr = new Date().toDateString();
+          return this.orders.filter(ord => {
+            const orderDate = new Date(ord.timestamp || ord.waktu || Date.now()).toDateString();
+            return orderDate === todayStr;
+          }).length;
+        },
+
+        getKomisiHariIni() {
+          const todayStr = new Date().toDateString();
+          return this.orders.reduce((total, ord) => {
+            if (ord.status === 'selesai' && ord.potongan_komisi) {
+              const orderDate = new Date(ord.timestamp || ord.waktu || Date.now()).toDateString();
+              if (orderDate === todayStr) { return total + Number(ord.potongan_komisi); }
+            }
+            return total;
+          }, 0);
+        },
+
+        getTotalKomisi() { 
+          return this.orders.reduce((total, ord) => { 
+            if (ord.status === 'selesai' && ord.potongan_komisi) return total + Number(ord.potongan_komisi); 
+            return total; 
+          }, 0); 
+        },
+
+        saveSystemSettings() { 
+          let payload = {
+            tarif_dasar_motor: Number(this.systemSettings.tarif_dasar_motor || 0),
+            tarif_per_km_motor: Number(this.systemSettings.tarif_per_km_motor || 0),
+            tarif_dasar_jastip: Number(this.systemSettings.tarif_dasar_jastip || 0),
+            tarif_per_km_jastip: Number(this.systemSettings.tarif_per_km_jastip || 0),
+            komisi_persen: Number(this.systemSettings.komisi_persen || 0),
+            radius_km: Number(this.systemSettings.radius_km || 3),
+            admin_wa: String(this.systemSettings.admin_wa || ''),
+            min_saldo_driver: Number(this.systemSettings.min_saldo_driver || 0),
+            min_saldo_mitra: Number(this.systemSettings.min_saldo_mitra || 0),
+            buka_fitur_topup_pelanggan: Boolean(this.systemSettings.buka_fitur_topup_pelanggan),
+            buka_fitur_tarik_pelanggan: Boolean(this.systemSettings.buka_fitur_tarik_pelanggan),
+            pesan_fitur_saldo: String(this.systemSettings.pesan_fitur_saldo || 'Fitur belum bisa digunakan')
+          };
+          db.ref('settings/app_config').set(payload).then(() => alert('✅ Pengaturan Tarif & Kontrol Saldo Pelanggan Berhasil Disimpan!')); 
+        },
+        saveBankSettings() { db.ref('settings/bank_admin').set(this.bankSettings).then(() => { alert('✅ Rekening Admin Berhasil Diperbarui secara Real-Time!'); }); },
+        saveTopBanner() { db.ref('settings/top_banner').set(this.topBanner).then(() => alert('✅ Banner Diperbarui!')); },
+        saveRunningText() { db.ref('settings/notice').set(this.runningText).then(() => alert('✅ Running Text Diperbarui!')); },
+
+        toggleDriverStatus(id, status) { let n = (status === 'aktif') ? 'suspend' : 'aktif'; if (confirm('Ubah status driver?')) db.ref('drivers/' + id + '/status').set(n); },
+        
+        toggleCustomerStatus(uid, status) { 
+          let n = (status === 'aktif') ? 'suspend' : 'aktif'; 
+          if (confirm('Ubah status akun pelanggan ini?')) {
+            db.ref('customers/' + uid + '/status').set(n); 
+          }
+        },
+        
+        async prosesKeuanganAdminSelesai(orderId, order) {
+          const driverId = String(order.driver_id || '').trim();
+          if (!driverId) throw new Error('Pesanan belum memiliki driver. Tugaskan driver sebelum menyelesaikan pesanan.');
+          const gross = Math.max(0, Number(order.ongkir || 0));
+          const persen = Math.max(0, Number(order.komisi_persen ?? 15));
+          const commission = Math.max(0, Number(order.komisi_admin ?? order.potongan_komisi ?? (gross * persen / 100)));
+          const netDriver = Math.max(0, gross - commission);
+          const metode = String(order.metode_pembayaran || 'COD').trim().toLowerCase() === 'saldo' ? 'Saldo' : 'COD';
+          const now = Date.now();
+          const financeRef = db.ref('orders/' + orderId + '/keuangan_status');
+          const claim = await financeRef.transaction(v => {
+            if (v && v.status === 'done') return;
+            if (v && v.status === 'processing' && (now - Number(v.started_at || 0)) < 60000) return;
+            return { status: 'processing', started_at: now, driver_id: driverId, source: 'admin' };
+          });
+          if (!claim || !claim.committed) {
+            const current = claim?.snapshot?.val?.() || {};
+            if (current.status === 'done') return { alreadyProcessed: true };
+            throw new Error('Keuangan pesanan sedang diproses oleh aplikasi lain. Coba lagi sebentar.');
+          }
+          const saldoDelta = metode === 'Saldo' ? netDriver : -commission;
+          const updates = {};
+          updates['drivers/' + driverId + '/saldo'] = firebase.database.ServerValue.increment(saldoDelta);
+          updates['orders/' + orderId + '/keuangan_diproses'] = true;
+          updates['orders/' + orderId + '/keuangan_diproses_pada'] = now;
+          updates['orders/' + orderId + '/metode_pembayaran_keuangan'] = metode;
+          updates['orders/' + orderId + '/komisi_persen'] = persen;
+          updates['orders/' + orderId + '/komisi_admin'] = commission;
+          updates['orders/' + orderId + '/pendapatan_driver'] = netDriver;
+          updates['orders/' + orderId + '/saldo_driver_delta'] = saldoDelta;
+          updates['orders/' + orderId + '/keuangan_status'] = { status: 'done', started_at: now, selesai_pada: now, driver_id: driverId, source: 'admin' };
+          updates['admin_finance/orders/' + orderId] = {
+            order_id: orderId, driver_id: driverId, gross_ongkir: gross,
+            komisi_persen: persen, komisi_admin: commission, pendapatan_driver: netDriver,
+            metode_pembayaran: metode, saldo_driver_delta: saldoDelta, timestamp: now, source: 'admin'
+          };
+          updates['driver_transactions/' + driverId + '/' + orderId] = {
+            order_id: orderId, jenis: metode === 'Saldo' ? 'pendapatan_order' : 'potongan_komisi_cod',
+            nominal: Math.abs(saldoDelta), saldo_delta: saldoDelta, gross_ongkir: gross,
+            komisi_admin: commission, pendapatan_driver: netDriver, metode_pembayaran: metode,
+            timestamp: now, keterangan: metode === 'Saldo' ? 'Pendapatan bersih order pembayaran SiapPay' : 'Potongan komisi admin dari saldo driver untuk order COD'
+          };
+          try {
+            await db.ref().update(updates);
+            return { alreadyProcessed: false };
+          } catch (err) {
+            try {
+              await financeRef.transaction(v => {
+                if (v && v.status === 'processing' && Number(v.started_at) === now && String(v.driver_id) === driverId) return null;
+                return;
+              });
+            } catch (_) {}
+            throw err;
+          }
+        },
+
+        async updateOrderStatus(id, status) {
+          if (status === 'dibatalkan') {
+            let alasan = prompt('Tuliskan alasan pembatalan:');
+            if (!alasan) return;
+            try {
+              await db.ref('orders/' + id).update({ status: status, alasan_batal: alasan });
+            } catch (err) { alert('Gagal membatalkan pesanan. Periksa koneksi lalu coba lagi.'); }
+            return;
+          }
+          try {
+            const targetOrder = this.orders.find(o => String(o.id) === String(id));
+            if (!targetOrder) throw new Error('Data pesanan tidak ditemukan. Muat ulang daftar pesanan.');
+            if (status === 'selesai') {
+              // Gunakan klaim keuangan yang sama dengan aplikasi driver agar tidak terhitung dua kali.
+              await this.prosesKeuanganAdminSelesai(id, targetOrder);
+            }
+            await db.ref('orders/' + id).update({ status: status, ...(status === 'selesai' ? { selesai_pada: targetOrder.selesai_pada || Date.now() } : {}) });
+            if (status === 'selesai') {
+              let tokoId = targetOrder.toko_id;
+              let items = targetOrder.detail_pesanan || [];
+              if (items.length === 0 && targetOrder.id_produk) items = [{ id: targetOrder.id_produk, qty: 1 }];
+              items.forEach(item => {
+                let prodId = item.id;
+                let qtyBeli = Number(item.qty || 1);
+                if (tokoId && tokoId !== '-' && prodId) {
+                  let refSold = db.ref(`produk/${tokoId}/${prodId}/sold_count`);
+                  refSold.transaction(currentVal => (Number(currentVal) || 0) + qtyBeli);
+                }
+              });
+            }
+          } catch (err) {
+            console.error('Gagal memperbarui status pesanan:', err);
+            alert('❌ ' + ((err && err.message) || 'Status pesanan gagal diperbarui. Periksa koneksi lalu coba lagi.'));
+          }
+        },
+
+        prosesTopUp() {
+          if(!this.topUpForm.target_id || this.topUpForm.nominal <= 0) return alert('⚠ ID/UID & Nominal wajib diisi!');
+          let targetId = this.topUpForm.target_id.trim();
+          let refSaldo = (targetId.startsWith('DRV_')) ? db.ref('drivers/' + targetId + '/saldo') : (targetId.startsWith('TOKO_') ? db.ref('merchants/' + targetId + '/saldo') : db.ref('customers/' + targetId + '/saldo'));
+          
+          refSaldo.once('value').then(snap => {
+            let n = Number(snap.val() || 0) + Number(this.topUpForm.nominal);
+            refSaldo.set(n).then(() => {
+              db.ref('mutasi_saldo').push({ user_id: targetId, nominal: Number(this.topUpForm.nominal), jenis: 'IN', keterangan: 'Top Up Manual Admin', timestamp: Date.now() });
+              alert(`✅ Top Up Berhasil!\nSaldo Baru: Rp ${n.toLocaleString('id-ID')}`);
+              this.topUpForm.target_id = ''; this.topUpForm.nominal = 0;
+            });
+          });
+        },
+
+        approveWithdrawal(w) {
+          if(confirm('Setujui penarikan Rp ' + Number(w.nominal).toLocaleString('id-ID') + '?')) {
+            db.ref('withdrawals/' + w.id + '/status').set('selesai');
+            db.ref('mutasi_saldo').push({ user_id: w.user_id, nominal: Number(w.nominal), jenis: 'OUT', keterangan: 'Tarik Saldo Berhasil', timestamp: Date.now() });
+          }
+        },
+        
+        rejectWithdrawal(w) {
+          if(confirm('Tolak dan kembalikan saldo?')) {
+            let prefix = w.user_id.startsWith('DRV_') ? 'drivers/' : (w.user_id.startsWith('TOKO_') || w.tipe === 'merchant' ? 'merchants/' : 'customers/');
+            let ref = db.ref(prefix + w.user_id + '/saldo');
+            ref.once('value', snap => {
+              ref.set(Number(snap.val()||0) + Number(w.nominal)).then(() => {
+                db.ref('withdrawals/' + w.id + '/status').set('ditolak');
+                db.ref('mutasi_saldo').push({ user_id: w.user_id, nominal: Number(w.nominal), jenis: 'IN', keterangan: 'Pengembalian Dana (Tarik Saldo Ditolak)', timestamp: Date.now() });
+                alert('Saldo dikembalikan dan riwayat mutasi dicatat.');
+              });
+            });
+          }
+        },
+
+        approveTopUp(t) {
+          if (confirm(`Setujui pengisian saldo Rp ${Number(t.nominal).toLocaleString('id-ID')} untuk ${t.user_nama || this.getCustomerName(t.user_id) || t.user_id}?`)) {
+            let targetId = (t.user_id || '').trim();
+            let prefix = targetId.startsWith('DRV_') ? 'drivers/' : (targetId.startsWith('TOKO_') ? 'merchants/' : 'customers/');
+            let refSaldo = db.ref(prefix + targetId + '/saldo');
+            refSaldo.once('value', snap => {
+              let saldoBaru = Number(snap.val() || 0) + Number(t.nominal);
+              refSaldo.set(saldoBaru).then(() => {
+                db.ref('topups/' + t.id + '/status').set('selesai');
+                db.ref('mutasi_saldo').push({ user_id: targetId, nominal: Number(t.nominal), jenis: 'IN', keterangan: 'Top Up Disetujui Admin', timestamp: Date.now() });
+                alert(`✅ Top Up disetujui!\nSaldo ${t.user_nama || targetId} sekarang: Rp ${saldoBaru.toLocaleString('id-ID')}`);
+              });
+            });
+          }
+        },
+
+        rejectTopUp(t) {
+          if (confirm(`Tolak pengisian saldo dari ${t.user_nama || this.getCustomerName(t.user_id) || t.user_id}?`)) {
+            db.ref('topups/' + t.id + '/status').set('ditolak').then(() => { alert('❌ Permohonan top-up telah ditolak.'); });
+          }
+        },
+
+        uploadAndCompressImage(event, targetObject, targetKey) {
+          const file = event.target.files[0]; if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let w = img.width, h = img.height; const max = 300;
+              if (w > h && w > max) { h = Math.round((h * max) / w); w = max; } else if (h > max) { w = Math.round((w * max) / h); h = max; }
+              canvas.width = w; canvas.height = h;
+              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+              targetObject[targetKey] = canvas.toDataURL('image/webp', 0.4);
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        },
+
+        uploadSlideDirect(event, slot) {
+          const file = event.target.files[0]; if (!file) return;
+          let title = prompt(`Judul Slide ${slot}:`, `Promo Spesial ${slot}`); if (!title) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let w = img.width, h = img.height; const max = 400;
+              if (w > h && w > max) { h = Math.round((h * max) / w); w = max; } else if (h > max) { w = Math.round((w * max) / h); h = max; }
+              canvas.width = w; canvas.height = h;
+              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+              db.ref('settings/promos/slide_' + slot).set({ title: title, gambar: canvas.toDataURL('image/webp', 0.4), timestamp: Date.now() }).then(() => { event.target.value = ''; });
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        },
+        deletePromoSlide(key) { if (confirm(`Hapus foto promo?`)) db.ref('settings/promos/' + key).remove(); },
+
+        openMerchantModal(m = null) {
+          if (m) { 
+            this.merchantForm = { ...m }; 
+            if (!this.merchantForm.id) this.merchantForm.id = 'TOKO_' + Date.now(); 
+            if (this.merchantForm.is_mitra === undefined) this.merchantForm.is_mitra = true; 
+            if (this.merchantForm.is_open === undefined) this.merchantForm.is_open = true; 
+            if (this.merchantForm.jam_buka === undefined) this.merchantForm.jam_buka = '08:00';
+            if (this.merchantForm.jam_tutup === undefined) this.merchantForm.jam_tutup = '22:00';
+          }
+          else { 
+            this.merchantForm = { id: 'TOKO_' + Date.now(), nama_toko: '', kategori: 'Pasar Samuda', alamat_lengkap: 'Pasar Samuda, Kotim', foto_toko: '', lat: -2.9818, lng: 112.9739, is_mitra: true, is_open: true, jam_buka: '08:00', jam_tutup: '22:00' }; 
+          }
+          this.merchantAccountForm = { email: this.merchantForm.email || '', password: '' };
+          this.showMerchantModal = true;
+          
+          this.$nextTick(() => {
+            let lat = Number(this.merchantForm.lat || -2.9818); 
+            let lng = Number(this.merchantForm.lng || 112.9739);
+
+            const updateLokasiOtomatis = (newLat, newLng) => {
+              this.merchantForm.lat = newLat; 
+              this.merchantForm.lng = newLng;
+              this.merchantForm.alamat_lengkap = "Mencari alamat lokasi..."; 
+              
+              fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newLat}&lon=${newLng}`)
+                .then(r => r.json())
+                .then(d => { 
+                  if(d && d.display_name) {
+                    this.merchantForm.alamat_lengkap = d.display_name; 
+                  } else {
+                    this.merchantForm.alamat_lengkap = `${newLat}, ${newLng}`;
+                  }
+                }).catch(()=>{
+                  this.merchantForm.alamat_lengkap = `${newLat}, ${newLng}`;
+                });
+            };
+            
+            if (!googleMapToko) {
+              googleMapToko = new google.maps.Map(document.getElementById('google-toko-map'), {
+                center: { lat, lng },
+                zoom: 15,
+                gestureHandling: 'greedy'
+              });
+
+              googleMarkerToko = new google.maps.Marker({
+                position: { lat, lng },
+                map: googleMapToko,
+                draggable: true
+              });
+
+              google.maps.event.addListener(googleMarkerToko, 'dragend', (event) => {
+                updateLokasiOtomatis(event.latLng.lat(), event.latLng.lng());
+              });
+
+              google.maps.event.addListener(googleMapToko, 'click', (event) => {
+                googleMarkerToko.setPosition(event.latLng); 
+                googleMapToko.panTo(event.latLng); 
+                updateLokasiOtomatis(event.latLng.lat(), event.latLng.lng());
+              });
+
+            } else {
+              google.maps.event.trigger(googleMapToko, 'resize');
+              googleMapToko.setCenter({ lat, lng });
+              googleMarkerToko.setPosition({ lat, lng });
+            }
+          });
+        },
+
+        getCurrentLocation() {
+          if (!navigator.geolocation) {
+            alert('❌ Geolocation / GPS tidak didukung oleh browser Anda.');
+            return;
+          }
+
+          this.isLocating = true;
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              let lat = position.coords.latitude;
+              let lng = position.coords.longitude;
+
+              this.merchantForm.lat = lat;
+              this.merchantForm.lng = lng;
+
+              if (googleMapToko && googleMarkerToko) {
+                googleMapToko.setCenter({ lat, lng });
+                googleMarkerToko.setPosition({ lat, lng });
+                googleMapToko.setZoom(17);
+              }
+
+              fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+                .then(r => r.json())
+                .then(d => {
+                  if (d && d.display_name) {
+                    this.merchantForm.alamat_lengkap = d.display_name;
+                  } else {
+                    this.merchantForm.alamat_lengkap = `${lat}, ${lng}`;
+                  }
+                })
+                .catch(() => {
+                  this.merchantForm.alamat_lengkap = `${lat}, ${lng}`;
+                })
+                .finally(() => {
+                  this.isLocating = false;
+                  alert('✅ Lokasi GPS berhasil ditemukan & diterapkan ke peta!');
+                });
+            },
+            (error) => {
+              this.isLocating = false;
+              let msg = '❌ Gagal mengambil lokasi GPS.';
+              if (error.code === error.PERMISSION_DENIED) {
+                msg = '❌ Akses lokasi ditolak. Harap izinkan akses lokasi (GPS) pada browser/perangkat Anda.';
+              } else if (error.code === error.POSITION_UNAVAILABLE) {
+                msg = '❌ Informasi lokasi tidak tersedia.';
+              } else if (error.code === error.TIMEOUT) {
+                msg = '❌ Permintaan waktu lokasi GPS habis (timeout).';
+              }
+              alert(msg);
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 0
+            }
+          );
+        },
+
+        searchLocation() {
+          let query = this.merchantForm.alamat_lengkap ? this.merchantForm.alamat_lengkap.trim() : '';
+          if (!query) return alert('⚠ Masukkan alamat, koordinat, atau link Google Maps terlebih dahulu!');
+
+          let coordRegex = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/;
+          let matchCoord = query.match(coordRegex);
+          if (matchCoord) {
+            let lat = parseFloat(matchCoord[1]), lon = parseFloat(matchCoord[2]);
+            this.merchantForm.lat = lat; this.merchantForm.lng = lon;
+            if (googleMapToko && googleMarkerToko) { googleMapToko.setCenter({ lat, lng: lon }); googleMarkerToko.setPosition({ lat, lng: lon }); }
+            alert('✅ Titik koordinat berhasil diterapkan ke peta!');
+            return;
+          }
+
+          let searchQuery = query.toLowerCase().includes('samuda') ? query : query + ', Samuda';
+          fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data && data.length > 0) {
+                let lat = parseFloat(data[0].lat), lon = parseFloat(data[0].lon);
+                this.merchantForm.lat = lat; this.merchantForm.lng = lon;
+                this.merchantForm.alamat_lengkap = data[0].display_name;
+                if (googleMapToko && googleMarkerToko) { googleMapToko.setCenter({ lat, lng: lon }); googleMarkerToko.setPosition({ lat, lng: lon }); }
+                alert('✅ Lokasi ditemukan di peta!');
+              } else {
+                alert('❌ Alamat tidak ditemukan.');
+              }
+            });
+        },
+
+        async saveMerchant() {
+          if (!this.merchantForm.nama_toko) return alert('⚠️ Nama toko wajib diisi!');
+          const isMitra = this.merchantForm.is_mitra === true;
+          const email = String(this.merchantAccountForm.email || this.merchantForm.email || '').trim().toLowerCase();
+          const password = String(this.merchantAccountForm.password || '');
+          if (isMitra && !this.merchantForm.uid && (!email || !password)) return alert('Toko Mitra wajib memiliki email dan kata sandi untuk akun Firebase.');
+          if (isMitra && !this.merchantForm.uid && password.length < 6) return alert('Kata sandi minimal 6 karakter.');
+          this.isSavingMerchant = true;
+          let secondaryAuth = null;
+          let createdUser = null;
+          try {
+            let uid = this.merchantForm.uid || '';
+            if (isMitra && !uid) {
+              // Gunakan Firebase app sekunder agar pembuatan akun mitra tidak mengeluarkan Admin.
+              let secondaryApp;
+              try { secondaryApp = firebase.app('merchantRegistrationApp'); }
+              catch (_) { secondaryApp = firebase.initializeApp(firebaseConfig, 'merchantRegistrationApp'); }
+              secondaryAuth = secondaryApp.auth();
+              const credential = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+              createdUser = credential.user;
+              uid = createdUser.uid;
+              try { await createdUser.sendEmailVerification(); } catch (verificationError) { console.warn('Verifikasi email mitra belum terkirim:', verificationError); }
+            }
+            const merchantData = {
+              ...this.merchantForm,
+              foto_toko: this.merchantForm.foto_toko || '',
+              is_mitra: isMitra,
+              uid: isMitra ? uid : (this.merchantForm.uid || ''),
+              email: isMitra ? email : '',
+              auth_uid: isMitra ? uid : '',
+              akun_dibuat_admin: isMitra && !!createdUser,
+              diperbarui_pada: Date.now()
+            };
+            // Jangan pernah menyimpan kata sandi ke Realtime Database.
+            delete merchantData.password;
+            await db.ref('merchants/' + this.merchantForm.id).set(merchantData);
+            this.showMerchantModal = false;
+            this.merchantAccountForm = { email: '', password: '' };
+            alert(isMitra
+              ? '✅ Toko Mitra berhasil disimpan.\nEmail: ' + email + (createdUser ? '\nKata sandi awal: ' + password + '\nUID Firebase: ' + uid + '\n\nSimpan kata sandi ini sekarang; kata sandi tidak disimpan di database.' : '\nAkun Firebase yang terhubung tetap digunakan.') + '\n\nPemilik toko dapat menggunakan akun ini untuk masuk ke aplikasi Mitra.'
+              : '✅ Toko non-mitra berhasil disimpan. Toko ini tidak memerlukan akun email dan kata sandi.');
+          } catch(e) {
+            console.error('Gagal menyimpan toko/akun mitra:', e);
+            let msg = e && e.message ? e.message : 'Terjadi kesalahan.';
+            if (e && e.code === 'auth/email-already-in-use') msg = 'Email ini sudah terdaftar di Firebase Authentication. Gunakan email lain atau hubungkan akun yang sudah ada melalui proses login mitra.';
+            else if (e && e.code === 'auth/invalid-email') msg = 'Format email tidak valid.';
+            else if (e && e.code === 'auth/weak-password') msg = 'Kata sandi terlalu lemah. Gunakan minimal 6 karakter.';
+            else if (e && e.code === 'auth/operation-not-allowed') msg = 'Login Email/Kata Sandi belum diaktifkan di Firebase Authentication.';
+            alert('❌ Gagal menyimpan toko: ' + msg + (createdUser ? '\nAkun Auth sudah dibuat dengan UID ' + createdUser.uid + ', tetapi profil toko mungkin belum tersimpan.' : ''));
+          } finally {
+            if (secondaryAuth) { try { await secondaryAuth.signOut(); } catch (_) {} }
+            this.isSavingMerchant = false;
+          }
+        },
+        deleteMerchant(id) { if (confirm('Hapus toko?')) { db.ref('merchants/' + id).remove(); db.ref('produk/' + id).remove(); } },
+
+        openProductModal(p = null) {
+          let availableMerchants = this.merchants.filter(m => m.kategori !== 'Motor' && m.kategori !== 'Jastip');
+          if (availableMerchants.length === 0) return alert('Belum ada Mitra/Toko yang tersedia!');
+          let defaultToko = this.selectedProductMerchant ? this.selectedProductMerchant.id : availableMerchants[0].id;
+          
+          if (p) {
+            this.productForm = JSON.parse(JSON.stringify(p));
+            if (!this.productForm.variations) this.productForm.variations = this.productForm.variatons || [];
+          } else {
+            this.productForm = { toko_id: defaultToko, id: 'PROD_' + Date.now(), nama_produk: '', harga: 0, deskripsi: '', foto_produk: '', is_promo: false, variations: [] };
+          }
+          this.showProductModal = true;
+        },
+
+        addVariantRow() {
+          if (!this.productForm.variations) this.productForm.variations = [];
+          this.productForm.variations.push({ nama: '', harga: 0 });
+        },
+
+        removeVariantRow(index) {
+          this.productForm.variations.splice(index, 1);
+        },
+
+        async saveProduct() {
+          if (!this.productForm.nama_produk) return alert('⚠️ Nama produk wajib diisi!');
+          this.isSavingProduct = true;
+          try {
+            let cleanVariations = [];
+            if (Array.isArray(this.productForm.variations)) {
+              cleanVariations = this.productForm.variations
+                .filter(v => v.nama && v.nama.trim() !== '')
+                .map(v => ({ nama: v.nama.trim(), harga: Number(v.harga || 0) }));
+            }
+
+            await db.ref('produk/' + this.productForm.toko_id + '/' + this.productForm.id).set({
+              nama_produk: this.productForm.nama_produk,
+              harga: Number(this.productForm.harga || 0),
+              deskripsi: this.productForm.deskripsi || '',
+              foto_produk: this.productForm.foto_produk || '',
+              is_promo: this.productForm.is_promo || false,
+              variations: cleanVariations
+            });
+
+            this.showProductModal = false;
+            alert('✅ Produk & Varian berhasil disimpan langsung ke Database!');
+          } catch (error) {
+            console.error(error);
+            alert('❌ Gagal menyimpan produk: ' + error.message);
+          } finally {
+            this.isSavingProduct = false;
+          }
+        },
+
+        deleteProduct(tId, pId) { if (confirm('Hapus produk?')) db.ref('produk/' + tId + '/' + pId).remove(); },
+
+        openDriverAccountModal() {
+          this.driverAccountForm = { nama: '', email: '', password: '', no_hp: '', merk_motor: '', nama_motor: '', plat_nomor: '' };
+          this.showDriverAccountModal = true;
+        },
+        async registerDriverAccount() {
+          const form = this.driverAccountForm;
+          const nama = String(form.nama || '').trim();
+          const email = String(form.email || '').trim().toLowerCase();
+          const password = String(form.password || '');
+          if (!nama || !email || password.length < 6) {
+            alert('⚠ Isi nama, email yang valid, dan kata sandi minimal 6 karakter.');
+            return;
+          }
+          if (!firebase.auth().currentUser) {
+            alert('❌ Sesi admin tidak ditemukan. Silakan login ulang.');
+            return;
+          }
+          if (!confirm('Daftarkan akun driver untuk ' + nama + ' (' + email + ')?')) return;
+
+          this.isRegisteringDriverAccount = true;
+          let secondaryAuth = null;
+          let createdUser = null;
+          const driverId = 'DRV_' + Date.now();
+          try {
+            // Aplikasi Firebase sekunder mencegah proses pendaftaran mengeluarkan admin dari sesi utama.
+            let secondaryApp;
+            try { secondaryApp = firebase.app('driverRegistrationApp'); }
+            catch (_) { secondaryApp = firebase.initializeApp(firebaseConfig, 'driverRegistrationApp'); }
+            secondaryAuth = secondaryApp.auth();
+
+            const credential = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+            createdUser = credential.user;
+            try { await createdUser.sendEmailVerification(); }
+            catch (verificationError) { console.warn('Email verifikasi belum terkirim:', verificationError); }
+
+            const driverData = {
+              id: driverId,
+              uid: createdUser.uid,
+              email: email,
+              email_verified: false,
+              nama: nama,
+              no_hp: String(form.no_hp || '').trim(),
+              merk_motor: String(form.merk_motor || '').trim(),
+              nama_motor: String(form.nama_motor || '').trim(),
+              warna_motor: '',
+              plat_nomor: String(form.plat_nomor || '').trim(),
+              foto: '',
+              status: 'aktif',
+              dibuat_pada: Date.now(),
+              dibuat_oleh: firebase.auth().currentUser.uid
+            };
+            await db.ref('drivers/' + driverId).set(driverData);
+
+            this.showDriverAccountModal = false;
+            this.driverAccountForm = { nama: '', email: '', password: '', no_hp: '', merk_motor: '', nama_motor: '', plat_nomor: '' };
+            alert('✅ Akun driver berhasil dibuat!\n\nEmail: ' + email + '\nKata sandi: ' + password + '\nID Driver: ' + driverId + '\n\nSimpan informasi ini dan berikan langsung kepada driver. Demi keamanan, kata sandi tidak disimpan di database dan tidak bisa ditampilkan kembali. Tautan verifikasi dikirim jika pengiriman email berhasil.');
+          } catch (e) {
+            console.error('Gagal mendaftarkan akun driver:', e);
+            let msg = e && e.message ? e.message : 'Terjadi kesalahan.';
+            if (e && e.code === 'auth/email-already-in-use') msg = 'Email ini sudah terdaftar di Firebase Authentication.';
+            else if (e && e.code === 'auth/invalid-email') msg = 'Format email tidak valid.';
+            else if (e && e.code === 'auth/weak-password') msg = 'Kata sandi terlalu lemah. Gunakan minimal 6 karakter.';
+            else if (e && e.code === 'auth/operation-not-allowed') msg = 'Metode Email/Password belum diaktifkan di Firebase Authentication.';
+            else if (e && e.code === 'PERMISSION_DENIED') msg = 'Akun Auth dibuat, tetapi aturan Realtime Database menolak penyimpanan profil driver. Periksa rules Firebase sebelum mencoba lagi.';
+            alert('❌ Pendaftaran belum selesai: ' + msg + (createdUser ? '\nCatatan: akun Auth mungkin sudah dibuat dengan UID ' + createdUser.uid + ', tetapi profil driver belum tentu tersimpan.' : ''));
+          } finally {
+            if (secondaryAuth) {
+              try { await secondaryAuth.signOut(); } catch (_) {}
+            }
+            this.isRegisteringDriverAccount = false;
+          }
+        },
+
+        openDriverModal(d = null) { 
+          if (d) { this.driverForm = { ...d }; } 
+          else { this.driverForm = { id: 'DRV_' + Date.now(), nama: '', no_hp: '', merk_motor: '', nama_motor: '', warna_motor: '', plat_nomor: '', foto: '', status: 'aktif' }; }
+          this.showDriverModal = true; 
+        },
+        async saveDriver() { 
+          if (!this.driverForm.nama) return alert('⚠ Nama driver wajib diisi!');
+          this.isSavingDriver = true;
+          try {
+            await db.ref('drivers/' + this.driverForm.id).set({ ...this.driverForm, warna_motor: (this.driverForm.warna_motor || this.driverForm.warna || this.driverForm.motor_warna || this.driverForm.color_motor || '').trim(), foto: this.driverForm.foto || '' }); 
+            this.showDriverModal = false;
+            alert('✅ Data driver berhasil disimpan!');
+          } catch(e) { alert('❌ Gagal menyimpan driver: ' + e.message); } 
+          finally { this.isSavingDriver = false; }
+        },
+        deleteDriver(id) { if (confirm('Hapus driver?')) db.ref('drivers/' + id).remove(); },
+
+        openCustomerModal(c = null) { 
+          if(c) { 
+            this.customerForm = { ...c }; 
+          } else { 
+            alert("⚠️ Pendaftaran pelanggan baru dilakukan langsung oleh pelanggan melalui Form Registrasi (Email/Password) di aplikasi PELANGGNJA.html");
+            return;
+          }
+          this.showCustomerModal = true; 
+        },
+        
+        quickAdjustCustomerSaldo(amount) {
+          let curSaldo = Number(this.customerForm.saldo || 0);
+          let newSaldo = curSaldo + amount;
+          if (newSaldo < 0) newSaldo = 0;
+          this.customerForm.saldo = newSaldo;
+        },
+
+        getCustomerOrdersCount(uid) {
+          if (!uid) return 0;
+          return this.orders.filter(o => o.customer_id === uid || o.customer_id === this.customerForm.id).length;
+        },
+
+        saveCustomer() { 
+          if(!this.customerForm.uid) return alert('⚠️ UID pelanggan tidak valid!');
+          if(!this.customerForm.nama || !this.customerForm.no_hp) return alert('⚠ Nama dan Nomor HP wajib diisi!');
+          
+          let cleanHp = this.customerForm.no_hp.trim().replace(/[^0-9]/g, '');
+          let targetUid = this.customerForm.uid;
+
+          let oldCustomer = this.customers.find(c => c.uid === targetUid);
+          let oldSaldo = oldCustomer ? Number(oldCustomer.saldo || 0) : 0;
+          let newSaldo = Number(this.customerForm.saldo || 0);
+
+          db.ref('customers/' + targetUid).update({
+            nama: this.customerForm.nama,
+            email: this.customerForm.email || '',
+            no_hp: cleanHp,
+            saldo: newSaldo,
+            status: this.customerForm.status || 'aktif'
+          }).then(() => {
+            if (oldSaldo !== newSaldo) {
+              let selisih = newSaldo - oldSaldo;
+              db.ref('mutasi_saldo').push({
+                user_id: targetUid,
+                nominal: Math.abs(selisih),
+                jenis: selisih > 0 ? 'IN' : 'OUT',
+                keterangan: 'Penyesuaian Saldo oleh Admin',
+                timestamp: Date.now()
+              });
+            }
+
+            this.showCustomerModal = false;
+            alert('✅ Data pelanggan berhasil diperbarui!');
+          }).catch(err => {
+            alert('❌ Gagal menyimpan data: ' + err.message);
+          }); 
+        },
+
+        deleteCustomer(uid) { 
+          if(confirm('Hapus data pelanggan ini dari database Realtime?')) {
+            db.ref('customers/' + uid).remove().then(() => {
+              alert('✅ Data pelanggan berhasil dihapus!');
+            });
+          }
+        },
+
+        openOrderMap(ord) {
+          this.activeMapOrder = ord;
+          this.showOrderMapModal = true;
+          
+          this.$nextTick(() => {
+            let latJ = Number(ord.lat_jemput || -2.9818); 
+            let lngJ = Number(ord.lng_jemput || 112.9739);
+            let latT = Number(ord.lat_tujuan || -2.9830); 
+            let lngT = Number(ord.lng_tujuan || 112.9750);
+            
+            if (!googleMapOrder) {
+              googleMapOrder = new google.maps.Map(document.getElementById('google-order-map'), {
+                center: { lat: latJ, lng: lngJ },
+                zoom: 14,
+                gestureHandling: 'greedy'
+              });
+            } else {
+              google.maps.event.trigger(googleMapOrder, 'resize');
+            }
+
+            if (googleMarkerAsal) googleMarkerAsal.setMap(null);
+            if (googleMarkerTujuan) googleMarkerTujuan.setMap(null);
+
+            googleMarkerAsal = new google.maps.Marker({
+              position: { lat: latJ, lng: lngJ },
+              map: googleMapOrder,
+              title: 'Titik Penjemputan'
+            });
+
+            googleMarkerTujuan = new google.maps.Marker({
+              position: { lat: latT, lng: lngT },
+              map: googleMapOrder,
+              title: 'Titik Tujuan'
+            });
+
+            let directionsService = new google.maps.DirectionsService();
+            let directionsRenderer = new google.maps.DirectionsRenderer();
+            directionsRenderer.setMap(googleMapOrder);
+
+            directionsService.route({
+              origin: { lat: latJ, lng: lngJ },
+              destination: { lat: latT, lng: lngT },
+              travelMode: google.maps.TravelMode.DRIVING
+            }, (response, status) => {
+              if (status === 'OK') {
+                directionsRenderer.setDirections(response);
+              }
+            });
+          });
+        }
+      }));
+    });
+  </script>
+</body>
+</html>
